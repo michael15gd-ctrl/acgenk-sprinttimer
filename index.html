@@ -35,6 +35,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 @media(max-width:520px){#timer{font-size:56px}.result-time{font-size:48px}header{font-size:19px}.start-message{font-size:25px}.sequence-preview{font-size:16px;gap:5px}.sequence-preview span{padding:7px 8px}}
 .sync-flash{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,212,0,.96);color:#111;z-index:50;font-size:64px;font-weight:900}.sync-flash.show{display:flex}
 </style>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -125,24 +126,24 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
     <div class="card">
       <div class="step" id="pairStep">Stap 2</div>
       <h2>Starttelefoon koppelen</h2>
-      <p class="intro">Beide smartphones moeten op hetzelfde wifi-netwerk zitten. De timingcommunicatie gaat daarna rechtstreeks tussen de twee toestellen.</p>
+      <p class="intro">Beide smartphones zitten op hetzelfde wifi-netwerk. De starttelefoon hoeft alleen deze QR-code te scannen.</p>
+
       <div id="pairArrival" class="pair-box">
         <h3>Aankomsttelefoon</h3>
-        <p class="small">Druk op <b>Maak koppelcode</b>. Toon daarna de QR-code aan de starttelefoon. De starttelefoon geeft vervolgens een antwoordcode terug.</p>
-        <button id="makeOffer">Maak koppelcode</button>
+        <p class="small">Maak één sessie aan en toon de QR-code op het scherm. De tweede smartphone scant deze code met de gewone camera.</p>
+        <button id="makeOffer">Nieuwe startsessie</button>
         <div id="offerQr" class="qr"></div>
-        <div id="offerInfo" class="small"></div>
-        <div class="codebox"><label for="offerCode">Koppelcode (ook handmatig te kopiëren)</label><textarea id="offerCode" readonly></textarea><button id="copyOffer" class="secondary">Kopieer koppelcode</button></div>
-        <div style="margin-top:14px"><label for="answerCode">Antwoordcode van de starttelefoon</label><textarea id="answerCode" placeholder="Plak hier de antwoordcode..."></textarea><button id="applyAnswer">Verbind met starttelefoon</button></div>
+        <div id="offerInfo" class="small" style="text-align:center"></div>
+        <div id="pairLink" class="hint hidden" style="word-break:break-all"></div>
+        <div id="arrivalInternetNote" class="small" style="margin-top:8px">Voor het koppelen gebruikt deze webversie een internetverbinding. Zodra de verbinding is gemaakt, worden de timingberichten rechtstreeks tussen de telefoons uitgewisseld.</div>
       </div>
+
       <div id="pairStart" class="pair-box hidden">
         <h3>Starttelefoon</h3>
-        <p class="small">Scan de QR-code op de aankomsttelefoon met de gewone camera van je smartphone en plak de gescande tekst hieronder. Daarna krijg je een antwoordcode terug.</p>
-        <label for="startOfferCode">Koppelcode van de aankomsttelefoon</label><textarea id="startOfferCode" placeholder="Plak hier de koppelcode..."></textarea><button id="acceptOffer">Koppelen en antwoord maken</button>
-        <div id="answerQr" class="qr"></div>
-        <div id="answerInfo" class="small"></div>
-        <div class="codebox"><label for="startAnswerCode">Antwoordcode</label><textarea id="startAnswerCode" readonly></textarea><button id="copyAnswer" class="secondary">Kopieer antwoordcode</button></div>
+        <p id="startPairIntro" class="small">Deze telefoon probeert automatisch verbinding te maken met de aankomsttelefoon.</p>
+        <div id="startPairUrl" class="hint hidden" style="word-break:break-all"></div>
       </div>
+
       <div id="pairStatus" class="pair-status wait">Nog niet verbonden</div>
       <div class="nav"><button id="backPair" class="secondary">Terug</button><button id="nextAfterPair" disabled>Verder</button></div>
     </div>
@@ -248,26 +249,141 @@ finishSoundFile.addEventListener('change',async e=>{const f=e.target.files&&e.ta
 testSound.addEventListener('click',()=>testAudio(startAudio,'Startgeluid'));testFinishSound.addEventListener('click',()=>testAudio(finishAudio,'Finishgeluid'));soundOn.addEventListener('change',()=>{if(soundOn.checked)unlockAudio()});
 testSync.addEventListener('click',async()=>{await unlockAudio();soundOn.checked=true;const c=getCorrection();syncStatus.textContent='Test correctie '+(c>0?'+':'')+c+' ms';const base=absNow()+800;setTimeout(()=>playAudio(startAudio),800);const visualDelay=Math.max(0,800+c);setTimeout(()=>{syncFlash.classList.add('show');setTimeout(()=>syncFlash.classList.remove('show'),180)},visualDelay)});
 
-function bytesToB64(bytes){let s='';const chunk=0x8000;for(let i=0;i<bytes.length;i+=chunk)s+=String.fromCharCode(...bytes.subarray(i,i+chunk));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-function b64ToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s);const out=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);return out}
-async function pack(obj){const raw=new TextEncoder().encode(JSON.stringify(obj));if('CompressionStream' in window){try{const cs=new CompressionStream('gzip');const w=cs.writable.getWriter();w.write(raw);w.close();const buf=new Uint8Array(await new Response(cs.readable).arrayBuffer());return 'ACGT1.'+bytesToB64(buf)}catch(e){}}return 'ACRAW1.'+bytesToB64(raw)}
-async function unpack(code){const [tag,payload]=String(code).trim().split('.');if(!payload)throw new Error('Ongeldige code');const bytes=b64ToBytes(payload);if(tag==='ACGT1'&&'DecompressionStream' in window){const ds=new DecompressionStream('gzip');const w=ds.writable.getWriter();w.write(bytes);w.close();const buf=await new Response(ds.readable).arrayBuffer();return JSON.parse(new TextDecoder().decode(buf))}if(tag==='ACRAW1')return JSON.parse(new TextDecoder().decode(bytes));throw new Error('Onbekend codeformaat')}
-function renderQr(el,text){el.innerHTML='';try{new QRCode(el,{text:text,width:240,height:240,correctLevel:QRCode.CorrectLevel.L})}catch(e){el.innerHTML='<div style="color:#111;padding:10px">QR-code te lang. Gebruik de koppelcode hieronder.</div>'}}
-async function waitIceGathering(pc,timeout=6000){if(pc.iceGatheringState==='complete')return;await new Promise(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;pc.removeEventListener('icegatheringstatechange',check);resolve()};const check=()=>{if(pc.iceGatheringState==='complete')finish()};pc.addEventListener('icegatheringstatechange',check);setTimeout(finish,timeout)})}
-
-function closePeer(){try{if(dataChannel)dataChannel.close();}catch(e){}try{if(pc)pc.close()}catch(e){}pc=null;dataChannel=null;pairConnected=false;clockReady=false;syncSamples=[];syncPending.clear();if(syncTimer){clearInterval(syncTimer);syncTimer=0}setPairStatus('Verbinding gesloten',false)}
 function setPairStatus(text,ok=false){$('pairStatus').textContent=text;$('pairStatus').classList.toggle('ok',ok);$('pairStatus').classList.toggle('wait',!ok)}
-function setupDataChannel(){if(!dataChannel)return;dataChannel.onopen=()=>{pairConnected=true;setPairStatus('VERBONDEN',true);$('nextAfterPair').disabled=false;startClockSync()};dataChannel.onclose=()=>{pairConnected=false;setPairStatus('Verbinding verbroken',false);$('nextAfterPair').disabled=true};dataChannel.onmessage=e=>handleSignal(e.data)}
-function send(obj){if(dataChannel&&dataChannel.readyState==='open'){dataChannel.send(JSON.stringify(obj));return true}return false}
 
-function startClockSync(){if(role!=='arrival')return;syncSamples=[];syncPending.clear();let count=0;syncTimer=setInterval(()=>{if(!pairConnected||count>=10){clearInterval(syncTimer);syncTimer=0;if(syncSamples.length){syncSamples.sort((a,b)=>a-b);clockOffset=syncSamples[Math.floor(syncSamples.length/2)];clockReady=true;$('pairStatus').textContent='VERBONDEN · klokverschil '+clockOffset.toFixed(1)+' ms';$('pairStatus').classList.add('ok')}return}const id=++count;const t0=absNow();syncPending.set(id,t0);send({type:'SYNC1',id,t0})},250)}
-function handleSignal(raw){let m;try{m=typeof raw==='string'?JSON.parse(raw):raw}catch(e){return}if(m.type==='SYNC1'&&role==='start'){const t1=absNow();const t2=absNow();send({type:'SYNC2',id:m.id,t0:m.t0,t1,t2});return}if(m.type==='SYNC2'&&role==='arrival'){const t3=absNow();const t0=Number(m.t0),t1=Number(m.t1),t2=Number(m.t2);const off=((t1-t0)+(t2-t3))/2;syncSamples.push(off);return}if(m.type==='START_AT'&&role==='arrival'){scheduleRemoteStart(Number(m.startAtStartClock),Number(m.correction||0),m.runId);return}if(m.type==='RUN_STARTED'&&role==='arrival'){return}if(m.type==='FINISH_RESULT'&&role==='start'){$('startUnitStatus').textContent='Aankomst: '+fmt(Number(m.ms))+' s';$('startCountdown').textContent=fmt(Number(m.ms))+' s';return}}
+function closePeer(){
+  try{if(dataChannel)dataChannel.close()}catch(e){}
+  try{if(pc)pc.destroy()}catch(e){try{if(pc)pc.close()}catch(_) {}}
+  pc=null;dataChannel=null;pairConnected=false;clockReady=false;syncSamples=[];syncPending.clear();
+  if(syncTimer){clearInterval(syncTimer);syncTimer=0}
+  setPairStatus('Verbinding gesloten',false);
+}
 
-$('makeOffer').addEventListener('click',async()=>{if(role!=='arrival')return;closePeer();pc=new RTCPeerConnection({iceServers:[]});dataChannel=pc.createDataChannel('control');setupDataChannel();const offer=await pc.createOffer();await pc.setLocalDescription(offer);await waitIceGathering(pc);const code=await pack({v:1,type:'offer',sdp:pc.localDescription.sdp,session:Math.random().toString(36).slice(2,8).toUpperCase()});$('offerCode').value=code;renderQr($('offerQr'),code);$('offerInfo').textContent='Laat de starttelefoon deze QR scannen en de tekst hieronder plakken. Daarna krijg je een antwoordcode.';setPairStatus('Wacht op starttelefoon…',false)});
-$('acceptOffer').addEventListener('click',async()=>{try{const data=await unpack($('startOfferCode').value);if(data.type!=='offer')throw new Error('Dit is geen startcode');closePeer();pc=new RTCPeerConnection({iceServers:[]});pc.ondatachannel=e=>{dataChannel=e.channel;setupDataChannel()};await pc.setRemoteDescription({type:'offer',sdp:data.sdp});const answer=await pc.createAnswer();await pc.setLocalDescription(answer);await waitIceGathering(pc);const code=await pack({v:1,type:'answer',sdp:pc.localDescription.sdp,session:data.session||''});$('startAnswerCode').value=code;renderQr($('answerQr'),code);$('answerInfo').textContent='Toon deze QR aan de aankomsttelefoon of kopieer de antwoordcode.';setPairStatus('Antwoord gemaakt · wachten op verbinding…',false)}catch(e){setPairStatus('Koppelen mislukt: '+e.message,false)}});
-$('applyAnswer').addEventListener('click',async()=>{try{const data=await unpack($('answerCode').value);if(data.type!=='answer')throw new Error('Dit is geen antwoordcode');await pc.setRemoteDescription({type:'answer',sdp:data.sdp});setPairStatus('Verbinding wordt opgebouwd…',false)}catch(e){setPairStatus('Antwoord kon niet worden gebruikt: '+e.message,false)}});
-async function copyText(el){try{await navigator.clipboard.writeText(el.value);el.focus();el.select()}catch(e){el.focus();el.select();document.execCommand('copy')}}
-$('copyOffer').addEventListener('click',()=>copyText($('offerCode')));$('copyAnswer').addEventListener('click',()=>copyText($('startAnswerCode')));
+function makePeerId(){return 'acgenk-'+Math.random().toString(36).slice(2,9)}
+
+function setupDataChannel(){
+  if(!dataChannel)return;
+  dataChannel.on('open',()=>{
+    pairConnected=true;
+    setPairStatus('VERBONDEN',true);
+    $('nextAfterPair').disabled=false;
+    if(role==='arrival') startClockSync();
+  });
+  dataChannel.on('close',()=>{
+    pairConnected=false;clockReady=false;
+    setPairStatus('Verbinding verbroken',false);
+    $('nextAfterPair').disabled=true;
+  });
+  dataChannel.on('error',()=>{
+    pairConnected=false;clockReady=false;
+    setPairStatus('Verbindingsfout',false);
+    $('nextAfterPair').disabled=true;
+  });
+  dataChannel.on('data',msg=>handleSignal(msg));
+}
+function send(obj){if(dataChannel&&dataChannel.open){dataChannel.send(obj);return true}return false}
+
+function createArrivalPeer(){
+  closePeer();
+  const id=makePeerId();
+  setPairStatus('Koppelcode wordt gemaakt…',false);
+  pc=new Peer(id);
+  pc.on('open',peerId=>{
+    const url=new URL(location.href);
+    url.searchParams.set('role','start');
+    url.searchParams.set('peer',peerId);
+    url.searchParams.set('v','13');
+    $('offerQr').innerHTML='';
+    renderQr($('offerQr'),url.toString());
+    $('offerInfo').textContent='Laat de starttelefoon deze QR-code scannen.';
+    $('pairLink').textContent=url.toString();
+    $('pairLink').classList.remove('hidden');
+    setPairStatus('Wacht op starttelefoon…',false);
+  });
+  pc.on('connection',conn=>{
+    if(dataChannel&&dataChannel.open)return;
+    dataChannel=conn;
+    setupDataChannel();
+  });
+  pc.on('error',err=>{
+    setPairStatus('Koppelen mislukt: '+(err?.type||err?.message||'onbekende fout'),false);
+  });
+  pc.on('disconnected',()=>{if(!pairConnected)setPairStatus('Verbinding met koppeldienst verbroken',false)});
+  pc.on('close',()=>{if(!pairConnected)setPairStatus('Koppelsessie gesloten',false)});
+}
+
+function connectStartPhone(targetPeer){
+  closePeer();
+  const myId=makePeerId();
+  setPairStatus('Verbinden met aankomsttelefoon…',false);
+  pc=new Peer(myId);
+  pc.on('open',()=>{
+    dataChannel=pc.connect(targetPeer,{reliable:true,serialization:'json'});
+    setupDataChannel();
+  });
+  pc.on('error',err=>{
+    setPairStatus('Geen verbinding: '+(err?.type||err?.message||'controleer wifi/internet'),false);
+    $('startPairIntro').textContent='De verbinding kon niet worden gemaakt. Controleer of beide telefoons op hetzelfde wifi-netwerk zitten en internet beschikbaar is voor het koppelen.';
+  });
+}
+
+function initStartFromUrl(){
+  if(role!=='start')return;
+  const params=new URLSearchParams(location.search);
+  const target=params.get('peer');
+  if(!target)return;
+  showWindow('setup');
+  $('roleStart').checked=true; updateRoleUi();
+  $('startPairUrl').textContent='Aankomsttelefoon: '+target;
+  $('startPairUrl').classList.remove('hidden');
+  $('nextSetup').disabled=true;
+  setPairStatus('Starttelefoon wordt verbonden…',false);
+  connectStartPhone(target);
+}
+
+function startClockSync(){
+  if(role!=='arrival')return;
+  syncSamples=[];syncPending.clear();let count=0;
+  if(syncTimer)clearInterval(syncTimer);
+  syncTimer=setInterval(()=>{
+    if(!pairConnected||count>=10){
+      clearInterval(syncTimer);syncTimer=0;
+      if(syncSamples.length){
+        syncSamples.sort((a,b)=>a-b);clockOffset=syncSamples[Math.floor(syncSamples.length/2)];clockReady=true;
+        setPairStatus('VERBONDEN · klokverschil '+clockOffset.toFixed(1)+' ms',true);
+      }
+      return;
+    }
+    const id=++count;const t0=absNow();syncPending.set(id,t0);send({type:'SYNC1',id,t0});
+  },250);
+}
+function handleSignal(raw){
+  const m=raw&&typeof raw==='object'?raw:(()=>{try{return JSON.parse(raw)}catch(e){return null}})();
+  if(!m)return;
+  if(m.type==='SYNC1'&&role==='start'){const t1=absNow();const t2=absNow();send({type:'SYNC2',id:m.id,t0:m.t0,t1,t2});return}
+  if(m.type==='SYNC2'&&role==='arrival'){const t3=absNow();const off=((Number(m.t1)-Number(m.t0))+(Number(m.t2)-t3))/2;syncSamples.push(off);return}
+  if(m.type==='START_AT'&&role==='arrival'){scheduleRemoteStart(Number(m.startAtStartClock),Number(m.correction||0),m.runId);return}
+  if(m.type==='RUN_STARTED'&&role==='arrival')return;
+  if(m.type==='FINISH_RESULT'&&role==='start'){$('startUnitStatus').textContent='Aankomst: '+fmt(Number(m.ms))+' s';$('startCountdown').textContent=fmt(Number(m.ms))+' s';return}
+  if(m.type==='CANCEL_START'&&role==='arrival'){if(remoteStartTimer)clearTimeout(remoteStartTimer);if(remotePrepTimer)clearTimeout(remotePrepTimer);resetTimingState('Start geannuleerd door starttelefoon');return}
+}
+
+$('makeOffer').addEventListener('click',()=>{if(role==='arrival')createArrivalPeer()});
+$('nextSetup').addEventListener('click',async()=>{
+  await unlockAudio();
+  useRemoteStart=$('useRemoteStart').checked;
+  if(role==='start'){
+    if(!pairConnected){showWindow('pair');$('pairArrival').classList.add('hidden');$('pairStart').classList.remove('hidden');$('pairStep').textContent='Stap 2 van 4';return}
+    setupStartUnitView();showWindow('timer');return;
+  }
+  if(useRemoteStart){showWindow('pair');$('pairArrival').classList.remove('hidden');$('pairStart').classList.add('hidden');$('pairStep').textContent='Stap 2 van 4';return}
+  showWindow('camera');
+});
+
+$('backPair').addEventListener('click',()=>{if(role==='start'&&new URLSearchParams(location.search).get('peer')){location.href=location.origin+location.pathname;return}showWindow('setup')});
+$('nextAfterPair').addEventListener('click',()=>{if(!pairConnected)return;if(role==='arrival')showWindow('camera');else{setupStartUnitView();showWindow('timer')}});
+
+async function copyText(el){try{await navigator.clipboard.writeText(el.textContent||el.value)}catch(e){}}
 
 $('nextSetup').addEventListener('click',async()=>{await unlockAudio();useRemoteStart=$('useRemoteStart').checked;if(role==='start'){showWindow('pair');$('pairArrival').classList.add('hidden');$('pairStart').classList.remove('hidden');$('pairStep').textContent='Stap 2 van 4';return}if(useRemoteStart){showWindow('pair');$('pairArrival').classList.remove('hidden');$('pairStart').classList.add('hidden');return}showWindow('camera')});
 $('backPair').addEventListener('click',()=>showWindow('setup'));$('nextAfterPair').addEventListener('click',()=>{if(!pairConnected)return;if(role==='arrival'){showWindow('camera')}else{setupStartUnitView();showWindow('timer')}});
@@ -378,6 +494,7 @@ $('sameAthlete').addEventListener('click',()=>{resetTimingState();if(role==='arr
 // Skip pairing when disabled; update page labels dynamically.
 $('useRemoteStart').addEventListener('change',()=>{useRemoteStart=$('useRemoteStart').checked;updateRoleUi()});
 updateRoleUi();
+initStartFromUrl();
 })();
 </script>
 </body>
