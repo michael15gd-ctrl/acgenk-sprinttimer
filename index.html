@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111111">
-<title>AC Genk Sprint Timer · 2 smartphones · v1.5</title>
+<title>AC Genk Sprint Timer · 2 smartphones · v1.8.1</title>
 <style>
 :root{--yellow:#ffd400;--black:#111;--dark:#1d1d1d;--muted:#aaa;--green:#1b7f3a;--red:#b52b2b;--blue:#2c67b1}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Arial,sans-serif;background:#111;color:#fff}
@@ -1720,7 +1720,7 @@ function initStartFromUrl(){
 
   $('startPairUrl').textContent='Aankomsttelefoon gevonden';
   $('startPairUrl').classList.remove('hidden');
-  $('nextSetup').disabled=true;
+  $('nextSetup').disabled=false;
   setPairStatus('Starttelefoon wordt automatisch verbonden…',false);
   connectStartPhone(target);
 }
@@ -1782,8 +1782,6 @@ $('nextAfterPair').addEventListener('click',()=>{if(!pairConnected)return;if(rol
 
 async function copyText(el){try{await navigator.clipboard.writeText(el.textContent||el.value)}catch(e){}}
 
-$('nextSetup').addEventListener('click',async()=>{await unlockAudio();useRemoteStart=$('useRemoteStart').checked;if(role==='start'){showWindow('pair');$('pairArrival').classList.add('hidden');$('pairStart').classList.remove('hidden');$('pairStep').textContent='Stap 2 van 4';return}if(useRemoteStart){showWindow('pair');$('pairArrival').classList.remove('hidden');$('pairStart').classList.add('hidden');return}showWindow('camera')});
-$('backPair').addEventListener('click',()=>showWindow('setup'));$('nextAfterPair').addEventListener('click',()=>{if(!pairConnected)return;if(role==='arrival'){showWindow('camera')}else{setupStartUnitView();showWindow('timer')}});
 
 $('backCamera').addEventListener('click',()=>{resetTimingState();if(useRemoteStart){showWindow('pair')}else showWindow('setup')});$('toTimer').addEventListener('click',()=>{if(!stream)return;resetTimingState();$('summaryAthlete').textContent=$('athlete').value||'Onbekend';$('summaryDistance').textContent=$('distance').value;setupArrivalTimerView();showWindow('timer')});
 $('backTimer').addEventListener('click',()=>{resetTimingState();if(role==='start')showWindow('pair');else showWindow(useRemoteStart?'camera':'camera')});$('toResults').addEventListener('click',()=>{if(readyForResult)showWindow('results')});
