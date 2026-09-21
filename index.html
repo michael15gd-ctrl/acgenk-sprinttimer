@@ -1524,7 +1524,8 @@ function syncCorrectionUi(v){v=Math.max(-500,Math.min(500,Math.round(Number(v)/1
 startCorrection.addEventListener('input',e=>syncCorrectionUi(e.target.value));startCorrectionValue.addEventListener('input',e=>syncCorrectionUi(e.target.value));
 $('startPart1').addEventListener('input',updatePreview);$('startPart2').addEventListener('input',updatePreview);updatePreview();renderLine();setReadyIndicators();
 
-function updateRoleUi(){role=$('roleStart').checked?'start':'arrival';$('roleArrivalLabel').classList.toggle('selected',role==='arrival');$('roleStartLabel').classList.toggle('selected',role==='start');$('arrivalSetup').classList.toggle('hidden',role!=='arrival');$('startSetup').classList.toggle('hidden',role!=='start');$('setupTitle').textContent=role==='start'?'Starttelefoon instellen':'Wedstrijd instellen';$('setupIntro').textContent=role==='start'?'Koppel deze smartphone aan de aankomsttelefoon. Stel hier het startschot, de startprocedure en de klokcorrectie in.':'Vul de gegevens van de sprint in. Je kunt optioneel een tweede smartphone als starttelefoon gebruiken.';$('startProcedureBox').classList.toggle('hidden',(role==='start'&&$('startMode').value==='direct')||(role==='arrival'&&useRemoteStart));$('soundSetup').classList.remove('hidden');$('startSoundBox').classList.toggle('hidden',role==='arrival'&&useRemoteStart);$('finishSoundBox').classList.toggle('hidden',role==='start');$('correctionBox').classList.toggle('hidden',role==='arrival'&&!useRemoteStart);$('nextSetup').textContent=role==='start'?'Volgende: koppelen':(useRemoteStart?'Volgende: starttelefoon koppelen':'Volgende: camera');}
+function updateRoleUi(){$('nextSetup').disabled=false;role=$('roleStart').checked?'start':'arrival';$('roleArrivalLabel').classList.toggle('selected',role==='arrival');$('roleStartLabel').classList.toggle('selected',role==='start');$('arrivalSetup').classList.toggle('hidden',role!=='arrival');$('startSetup').classList.toggle('hidden',role!=='start');$('setupTitle').textContent=role==='start'?'Starttelefoon instellen':'Wedstrijd instellen';$('setupIntro').textContent=role==='start'?'Koppel deze smartphone aan de aankomsttelefoon. Stel hier het startschot, de startprocedure en de klokcorrectie in.':'Vul de gegevens van de sprint in. Je kunt optioneel een tweede smartphone als starttelefoon gebruiken.';$('startProcedureBox').classList.toggle('hidden',(role==='start'&&$('startMode').value==='direct')||(role==='arrival'&&useRemoteStart));$('soundSetup').classList.remove('hidden');$('startSoundBox').classList.toggle('hidden',role==='arrival'&&useRemoteStart);$('finishSoundBox').classList.toggle('hidden',role==='start');$('correctionBox').classList.toggle('hidden',role==='arrival'&&!useRemoteStart);$('nextSetup').textContent=role==='start'?'Volgende: koppelen':(useRemoteStart?'Volgende: starttelefoon koppelen':'Volgende: camera');}
+$('nextSetup').disabled=false;
 $('roleArrival').addEventListener('change',updateRoleUi);$('roleStart').addEventListener('change',updateRoleUi);$('useRemoteStart').addEventListener('change',()=>{useRemoteStart=$('useRemoteStart').checked;updateRoleUi()});$('startMode').addEventListener('change',updateRoleUi);
 
 function setAudioSource(audio,src){audio.pause();audio.currentTime=0;audio.src=src;audio.load()}
@@ -1766,8 +1767,7 @@ function handleSignal(raw){
 }
 
 $('makeOffer').addEventListener('click',()=>{if(role==='arrival')createArrivalPeer()});
-$('nextSetup').addEventListener('click',async()=>{
-  await unlockAudio();
+$('nextSetup').addEventListener('click',()=>{
   useRemoteStart=$('useRemoteStart').checked;
   if(role==='start'){
     if(!pairConnected){showWindow('pair');$('pairArrival').classList.add('hidden');$('pairStart').classList.remove('hidden');$('pairStep').textContent='Stap 2 van 4';return}
