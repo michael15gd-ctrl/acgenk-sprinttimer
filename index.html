@@ -409,26 +409,22 @@ startBtn.addEventListener('click',async()=>{
     sequenceTimers.push(setTimeout(async()=>{
       if(!sequenceActive||token!==startSequenceToken)return;
       sequenceActive=false;
-      // Referentiemoment = het moment waarop het gekozen STARTGELUID wordt aangeroepen.
-      // De timer en de finishdetectie starten meteen, zonder te wachten op het einde van het audiobestand.
+      // De timer start exact op het referentiemoment waarop beide startsignalen worden geactiveerd.
+      // Beide audiokanalen worden parallel gestart zodat het startschot niet pas na het startgeluid komt.
       const shotSrc=startShotChoice.value;
-      startedAt=performance.now();
+      const now=performance.now();
+      startedAt=now;
       running=true;
-      timer.textContent='0.000';
-      startTimerDisplay();
+      const startPromise=playAudio(startAudio);
+      const shotPromise=shotSrc==='none'?Promise.resolve(false):playAudio(startShotAudio);
+      const [playedStart,playedShot]=await Promise.all([startPromise,shotPromise]);
+      if(!playedStart&&!playedShot)startMessage.textContent='START';
+      else startMessage.textContent='LOPEN!';
       $('indicator').textContent='DETECTIE ACTIEF';$('indicator').style.background='#ffd400';$('indicator').style.color='#111';
       $('timerIndicator').textContent='DETECTIE ACTIEF';$('timerIndicator').style.background='#ffd400';$('timerIndicator').style.color='#111';
       $('liveBadge').textContent='TIMING ACTIEF';$('liveBadge').style.background='#ffd400';$('liveBadge').style.color='#111';
-      setStatus('LOPEN! · timer gestart met startgeluid · finish wordt automatisch gedetecteerd');
-      // Startgeluid en eventueel startschot worden direct aangeroepen.
-      // Belangrijk: de timer wacht niet op play() of op het einde van een geluidsbestand.
-      const startPromise=playAudio(startAudio);
-      const shotPromise=shotSrc==='none'?Promise.resolve(false):playAudio(startShotAudio);
-      startMessage.textContent='START';
-      Promise.all([startPromise,shotPromise]).then(([playedStart,playedShot])=>{
-        if(!running)return;
-        startMessage.textContent=(playedStart||playedShot)?'LOPEN!':'START';
-      });
+      setStatus('LOPEN! · finish wordt automatisch gedetecteerd');
+      startTimerDisplay();
       // Herstart de automatische finishdetectie: resetTimingState() stopt bewust de detectielus.
       detectionLoop();
     },beepDelay));
