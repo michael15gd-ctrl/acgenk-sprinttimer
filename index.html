@@ -32,34 +32,11 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 <main>
 <section class="card">
   <div class="row">
-    <button id="modeSprint">Sprint timer</button>
-    <button id="modePhoto" class="secondary">Finishfoto</button>
-  </div>
-</section>
-
-<section class="card" id="startSettings">
-  <h3 style="margin-top:0">Startprocedure</h3>
-  <div class="row">
-    <div><label>Stap 1</label><input id="start1" value="Op uw plaatsen"></div>
-    <div><label>Stap 2</label><input id="start2" value="Klaar"></div>
-    <div><label>Stap 3 (optioneel)</label><input id="start3" value=""></div>
-  </div>
-  <div class="row" style="margin-top:10px">
-    <div><label>Tijd tussen stappen (seconden)</label><input id="stepDelay" type="number" min="0.3" max="5" step="0.1" value="1.0"></div>
-    <div style="display:flex;align-items:end">
-      <label style="display:flex;align-items:center;gap:8px;margin:0;min-height:48px;color:#fff">
-        <input id="beepOn" type="checkbox" checked style="width:20px;min-height:20px"> Piep aan
-      </label>
-    </div>
-  </div>
-</section>
-
-<section class="card" id="sprintControls">
-  <div class="row">
     <div><label>Atleet</label><input id="athlete" placeholder="Naam"></div>
     <div><label>Afstand</label><select id="distance"><option>20</option><option selected>30</option><option>40</option><option>50</option><option>60</option><option>100</option></select></div>
   </div>
-</section>
+<div style="margin-top:10px"><label style="display:flex;align-items:center;gap:8px"><input id="soundOn" type="checkbox" checked style="width:20px;min-height:20px"> Piepsignalen aan</label></div>
+  </section>
 
 <section class="card">
   <div id="stage">
@@ -73,17 +50,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
   </div>
 </section>
 
-<section class="card" id="photoPanel" style="display:none">
-  <h3 style="margin-top:0">Finishfoto</h3>
-  <p class="small">Richt de camera op de finishlijn en maak een foto. De foto blijft in deze sessie beschikbaar zodat je hem opnieuw kunt bekijken.</p>
-  <div class="row">
-    <button id="takePhoto" disabled>Maak finishfoto</button>
-    <button id="viewPhoto" class="secondary" disabled>Bekijk foto</button>
-  </div>
-  <img id="photoPreview" alt="Laatste finishfoto" style="display:none;width:100%;margin-top:12px;border-radius:12px">
-</section>
-
-<section class="card" id="timerPanel">
+<section class="card">
   <div id="timer">0.000</div>
   <div id="status" class="status">Klaar om te starten</div>
   <div class="row" style="margin-top:10px">
@@ -91,6 +58,22 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
     <button id="stop" class="secondary" disabled>Handmatig stoppen</button>
     <button id="reset" class="secondary">Reset</button>
   </div>
+</section>
+
+
+<section class="card">
+  <h3 style="margin-top:0">FotoFinish</h3>
+  <p class="small">De camera neemt alleen de smalle finishlijn op. Elke opeenvolgende lijn wordt naast de vorige geplaatst: zo ontstaat een echte tijdlijn van de finish.</p>
+  <div id="pfPreview" style="background:#000;border-radius:12px;overflow:hidden;min-height:90px;display:flex;align-items:center;justify-content:center">
+    <canvas id="pfCanvas" style="width:100%;height:auto;display:block"></canvas>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="pfStart" class="secondary">Start FotoFinish-opname</button>
+    <button id="pfStop" class="secondary" disabled>Stop opname</button>
+    <button id="pfClear" class="secondary">Wis foto</button>
+  </div>
+  <div id="pfStatus" class="small" style="margin-top:8px">Nog geen FotoFinish-opname.</div>
+  <a id="pfDownload" download="ac-genk-photofinish.png" style="display:none;color:#ffd400;margin-top:8px">Foto opslaan</a>
 </section>
 
 <section class="card">
@@ -109,10 +92,12 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 const $=id=>document.getElementById(id);
 const video=$('video'),timer=$('timer'),status=$('status');
 const cameraBtn=$('camera'),startBtn=$('start'),stopBtn=$('stop'),resetBtn=$('reset'),calBtn=$('calibrate');
-const modeSprint=$('modeSprint'),modePhoto=$('modePhoto'),sprintControls=$('sprintControls'),photoPanel=$('photoPanel');
-const timerPanel=$('timerPanel'),startSettings=$('startSettings'),takePhoto=$('takePhoto'),viewPhoto=$('viewPhoto'),photoPreview=$('photoPreview');
+const pfStart=$('pfStart'),pfStop=$('pfStop'),pfClear=$('pfClear'),pfCanvas=$('pfCanvas'),pfStatus=$('pfStatus'),pfDownload=$('pfDownload');
+
 let stream=null,running=false,startedAt=0,linePct=.68,direction=1,raf=0,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
-let audioCtx=null,lastPhoto=null;
+let audioCtx=null;
+let pfRecording=false,pfCtx=null,pfColumns=[],pfFrameCount=0,pfStartTime=0,pfEndTime=0,pfMaxColumns=2200;
+let pfLastFrame=0;
 
 const indicator=document.createElement('div');
 indicator.style.cssText='position:absolute;top:10px;left:10px;z-index:5;padding:6px 9px;border-radius:8px;background:#333;color:#fff;font:700 12px Arial,sans-serif';
@@ -120,31 +105,37 @@ indicator.textContent='DETECTIE UIT';
 $('stage').appendChild(indicator);
 
 function setStatus(s){status.textContent=s}
-function fmt(ms){return(ms/1000).toFixed(3)}
+function fmt(ms){return (ms/1000).toFixed(3)}
 function renderLine(){$('line').style.left=(linePct*100)+'%'}
 renderLine();
 
-function beep(freq=880,duration=.12){
- if(!$('beepOn').checked)return;
+function ensureAudio(){
  try{
-  audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
-  if(audioCtx.state==='suspended')audioCtx.resume();
-  const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();
-  osc.type='sine';osc.frequency.value=freq;
-  gain.gain.setValueAtTime(.0001,audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(.18,audioCtx.currentTime+.01);
-  gain.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);
-  osc.connect(gain);gain.connect(audioCtx.destination);
-  osc.start();osc.stop(audioCtx.currentTime+duration+.02);
+   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+   if(audioCtx.state==='suspended') audioCtx.resume();
  }catch(e){}
 }
+function beep(freq=880,duration=.12){ if($('soundOn') && !$('soundOn').checked)return;
+ ensureAudio();
+ if(!audioCtx)return;
+ const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+ o.type='sine';o.frequency.value=freq;
+ g.gain.setValueAtTime(.0001,audioCtx.currentTime);
+ g.gain.exponentialRampToValueAtTime(.22,audioCtx.currentTime+.01);
+ g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);
+ o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+duration+.02);
+}
+function beepStart(){beep(880,.12);setTimeout(()=>beep(1100,.16),150)}
+function beepFinish(){beep(660,.12);setTimeout(()=>beep(990,.18),150)}
 
 cameraBtn.addEventListener('click',async()=>{
  try{
+  ensureAudio();
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
   video.srcObject=stream;await video.play();
   canvas=document.createElement('canvas');canvas.width=320;canvas.height=180;
-  cameraBtn.textContent='Camera actief';cameraBtn.disabled=true;startBtn.disabled=false;calBtn.disabled=false;takePhoto.disabled=false;
+  pfCtx=pfCanvas.getContext('2d',{willReadFrequently:true});
+  cameraBtn.textContent='Camera actief';cameraBtn.disabled=true;startBtn.disabled=false;calBtn.disabled=false;pfStart.disabled=false;
   indicator.textContent='DETECTIE GEREED';indicator.style.background='#1b7f3a';
   setStatus('Camera actief · zet de gele lijn op de finishlijn');
   detectionLoop();
@@ -158,45 +149,24 @@ calBtn.addEventListener('click',()=>{
  renderLine();
 });
 
-modeSprint.addEventListener('click',()=>{
- modeSprint.classList.remove('secondary');modePhoto.classList.add('secondary');
- sprintControls.style.display='block';startSettings.style.display='block';timerPanel.style.display='block';photoPanel.style.display='none';
- setStatus(stream?'Camera actief · sprinttimer klaar':'Camera nog niet gestart');
-});
-modePhoto.addEventListener('click',()=>{
- modePhoto.classList.remove('secondary');modeSprint.classList.add('secondary');
- sprintControls.style.display='block';startSettings.style.display='none';timerPanel.style.display='none';photoPanel.style.display='block';
- setStatus(stream?'Camera actief · maak een foto van de finishlijn':'Start de camera om een finishfoto te maken');
-});
-
-function getSteps(){
- return [$('start1').value.trim(),$('start2').value.trim(),$('start3').value.trim()].filter(Boolean);
-}
-
 startBtn.addEventListener('click',()=>{
  if(running||!canvas)return;
+ ensureAudio();
  background=captureGray();previous=background?new Uint8Array(background):null;framesOver=0;lastCross=0;
  running=true;startBtn.disabled=true;stopBtn.disabled=false;
- const steps=getSteps();const delay=Math.max(.3,Math.min(5,parseFloat($('stepDelay').value)||1))*1000;
- if(!steps.length)steps.push('');
- let i=0;
- timer.textContent='0.000';setStatus('Maak je klaar…');
- const next=()=>{
-  if(i<steps.length){
-   setStatus(steps[i]||'Maak je klaar…');beep(620,.10);i++;
-   setTimeout(next,delay);
-  }else{
-   startedAt=performance.now();
-   beep(1046,.18);
+ let n=3;timer.textContent='3.000';setStatus('Maak je klaar…');
+ const tick=()=>{
+  if(n>0){timer.textContent=n+'.000';n--;setTimeout(tick,1000)}
+  else{
+   beepStart();startedAt=performance.now();
    indicator.textContent='DETECTIE ACTIEF';indicator.style.background='#ffd400';indicator.style.color='#111';
    setStatus('LOPEN! · finish wordt automatisch gedetecteerd');timerLoop();
   }
  };
- setTimeout(next,300);
+ setTimeout(tick,350);
 });
 
 stopBtn.addEventListener('click',finish);
-
 resetBtn.addEventListener('click',()=>{
  running=false;background=null;previous=null;framesOver=0;timer.textContent='0.000';setStatus('Klaar om te starten');
  stopBtn.disabled=true;startBtn.disabled=!stream;
@@ -208,7 +178,7 @@ function timerLoop(){if(!running)return;timer.textContent=fmt(performance.now()-
 function finish(){
  if(!running)return;
  const ms=performance.now()-startedAt;running=false;framesOver=0;stopBtn.disabled=true;startBtn.disabled=false;
- timer.textContent=fmt(ms);setStatus('FINISH · '+fmt(ms)+' s');beep(440,.22);
+ timer.textContent=fmt(ms);setStatus('FINISH · '+fmt(ms)+' s');beepFinish();
  indicator.textContent='FINISH GEDETECTEERD';indicator.style.background='#1b7f3a';indicator.style.color='#fff';
  const tr=document.createElement('tr');
  const name=($('athlete').value||'Onbekend').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -218,8 +188,10 @@ function finish(){
 
 function captureGray(){
  if(!canvas||video.readyState<2)return null;
- const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);
- const d=ctx.getImageData(0,0,canvas.width,canvas.height).data,gray=new Uint8Array(canvas.width*canvas.height);
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});
+ ctx.drawImage(video,0,0,canvas.width,canvas.height);
+ const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+ const gray=new Uint8Array(canvas.width*canvas.height);
  for(let i=0,p=0;i<d.length;i+=4,p++)gray[p]=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0;
  return gray;
 }
@@ -231,37 +203,97 @@ function detectionLoop(){
   const w=canvas.width,h=canvas.height,x=Math.round(w*linePct),band=12;
   let bgChanged=0,motionChanged=0,total=0;
   for(let y=8;y<h-8;y+=2)for(let dx=-band;dx<=band;dx+=2){
-   const xx=Math.max(0,Math.min(w-1,x+dx)),p=y*w+xx;
-   if(background&&Math.abs(current[p]-background[p])>24)bgChanged++;
-   if(Math.abs(current[p]-previous[p])>22)motionChanged++;
-   total++;
+    const xx=Math.max(0,Math.min(w-1,x+dx)),p=y*w+xx;
+    if(background&&Math.abs(current[p]-background[p])>24)bgChanged++;
+    if(Math.abs(current[p]-previous[p])>22)motionChanged++;
+    total++;
   }
   const ratio=Math.max(bgChanged/total,motionChanged/total);
   if(running){
-   if(ratio>.075)framesOver++;else framesOver=Math.max(0,framesOver-1);
-   indicator.textContent='DETECTIE ACTIEF '+Math.round(ratio*100)+'%';
-   if(framesOver>=3&&performance.now()-lastCross>1200){lastCross=performance.now();framesOver=0;finish()}
+    if(ratio>.075)framesOver++;else framesOver=Math.max(0,framesOver-1);
+    indicator.textContent='DETECTIE ACTIEF '+Math.round(ratio*100)+'%';
+    if(framesOver>=3&&performance.now()-lastCross>1200){lastCross=performance.now();framesOver=0;finish()}
   }
   previous=current;
  }else if(current)previous=current;
  raf=requestAnimationFrame(detectionLoop);
 }
 
-takePhoto.addEventListener('click',()=>{
- if(!stream||video.readyState<2)return;
- const c=document.createElement('canvas');c.width=video.videoWidth||1280;c.height=video.videoHeight||720;
- const ctx=c.getContext('2d');ctx.drawImage(video,0,0,c.width,c.height);
- const x=Math.round(c.width*linePct);
- ctx.fillStyle='#ffd400';ctx.fillRect(x-3,0,6,c.height);
- lastPhoto=c.toDataURL('image/jpeg',.9);
- photoPreview.src=lastPhoto;photoPreview.style.display='block';viewPhoto.disabled=false;
- setStatus('Finishfoto gemaakt');
+/* PHOTO FINISH
+   The selected finish line is sampled as a 1-pixel-wide vertical strip.
+   Every video frame contributes that strip as the next column in a horizontal
+   canvas. This creates a true time-varying finish-line image rather than a
+   conventional still photograph.
+*/
+pfStart.addEventListener('click',()=>{
+ if(!stream||!pfCtx)return;
+ ensureAudio();
+ pfColumns=[];pfFrameCount=0;pfStartTime=performance.now();pfEndTime=0;
+ pfRecording=true;pfStart.disabled=true;pfStop.disabled=false;pfClear.disabled=true;
+ pfCanvas.width=1;pfCanvas.height=video.videoHeight||180;
+ pfStatus.textContent='Opname loopt · elke kolom is een opeenvolgende finishlijnmeting';
+ beep(740,.10);
+ recordPhotoFinish();
 });
 
-viewPhoto.addEventListener('click',()=>{
- if(!lastPhoto)return;
- photoPreview.style.display=photoPreview.style.display==='none'?'block':'none';
- setStatus(photoPreview.style.display==='block'?'Finishfoto zichtbaar':'Finishfoto verborgen');
+function recordPhotoFinish(){
+ if(!pfRecording)return;
+ const now=performance.now();
+ // Limit to a practical image width. Older columns are discarded if necessary.
+ if(now-pfLastFrame>=0){
+   pfLastFrame=now;
+   const w=video.videoWidth||640,h=video.videoHeight||360;
+   const sx=Math.max(0,Math.min(w-1,Math.round(w*linePct)));
+   const stripCanvas=document.createElement('canvas');
+   stripCanvas.width=1;stripCanvas.height=h;
+   const sctx=stripCanvas.getContext('2d');
+   sctx.drawImage(video,sx,0,1,h,0,0,1,h);
+   const pixels=sctx.getImageData(0,0,1,h).data;
+   pfColumns.push(pixels);
+   if(pfColumns.length>pfMaxColumns)pfColumns.shift();
+   pfFrameCount++;
+   renderPhotoFinish();
+ }
+ requestAnimationFrame(recordPhotoFinish);
+}
+
+function renderPhotoFinish(){
+ const h=video.videoHeight||180;
+ const width=pfColumns.length;
+ if(!width)return;
+ pfCanvas.width=width;pfCanvas.height=h;
+ const out=pfCtx.createImageData(width,h);
+ for(let x=0;x<width;x++){
+   const col=pfColumns[x];
+   for(let y=0;y<h;y++){
+     const si=y*4,di=(y*width+x)*4;
+     out.data[di]=col[si];out.data[di+1]=col[si+1];out.data[di+2]=col[si+2];out.data[di+3]=255;
+   }
+ }
+ pfCtx.putImageData(out,0,0);
+ pfStatus.textContent='Opgenomen: '+pfFrameCount+' lijnbeelden · duur ongeveer '+((pfFrameCount/Math.max(1,estimateFps())).toFixed(2))+' s';
+}
+
+function estimateFps(){return 30}
+
+pfStop.addEventListener('click',()=>{
+ if(!pfRecording)return;
+ pfRecording=false;pfEndTime=performance.now();
+ pfStart.disabled=false;pfStop.disabled=true;pfClear.disabled=false;
+ beepFinish();
+ renderPhotoFinish();
+ try{
+   pfDownload.href=pfCanvas.toDataURL('image/png');
+   pfDownload.style.display='inline-block';
+   pfDownload.textContent='FotoFinish opslaan';
+ }catch(e){}
+ pfStatus.textContent='Opname gestopt · '+pfFrameCount+' lijnbeelden. Scroll/zoom de afbeelding in Safari om de finish te bekijken.';
+});
+
+pfClear.addEventListener('click',()=>{
+ pfRecording=false;pfColumns=[];pfFrameCount=0;pfCanvas.width=1;pfCanvas.height=180;
+ pfCtx.clearRect(0,0,1,180);pfDownload.style.display='none';
+ pfStatus.textContent='Nog geen FotoFinish-opname.';
 });
 })();
 </script>
