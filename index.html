@@ -328,6 +328,8 @@ startBtn.addEventListener('click',async()=>{
       $('liveBadge').textContent='TIMING ACTIEF';$('liveBadge').style.background='#ffd400';$('liveBadge').style.color='#111';
       setStatus('LOPEN! · finish wordt automatisch gedetecteerd');
       startTimerDisplay();
+      // Herstart de automatische finishdetectie: resetTimingState() stopt bewust de detectielus.
+      detectionLoop();
     },beepDelay));
   },gap));
 });
