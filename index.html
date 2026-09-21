@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>AC Genk Sprint Timer</title>
+<style>
+:root{--yellow:#ffd400;--black:#111;--gray:#f3f3f3}
+*{box-sizing:border-box} body{margin:0;font-family:Arial,sans-serif;background:#111;color:#fff}
+header{padding:14px 18px;background:var(--yellow);color:#111;font-weight:900;font-size:21px}
+main{max-width:760px;margin:auto;padding:14px}
+.card{background:#1d1d1d;border-radius:16px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+label{display:block;font-size:13px;color:#bbb;margin-bottom:5px}
+input,select,button{width:100%;min-height:48px;border-radius:11px;border:0;padding:10px 12px;font-size:16px}
+button{font-weight:800;background:var(--yellow);color:#111}
+button.secondary{background:#333;color:#fff}
+button:disabled{opacity:.45}
+#stage{position:relative;background:#000;border-radius:16px;overflow:hidden;aspect-ratio:16/10}
+video{width:100%;height:100%;object-fit:cover;display:block}
+#line{position:absolute;top:0;bottom:0;left:68%;width:4px;background:var(--yellow);box-shadow:0 0 0 2px #111}
+#timer{font-size:62px;text-align:center;font-variant-numeric:tabular-nums;font-weight:900;margin:8px 0}
+.status{text-align:center;color:#bbb;min-height:24px}
+.big{font-size:18px}
+table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #333;text-align:left}
+.small{font-size:12px;color:#aaa;line-height:1.4}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+<header>AC GENK · SPRINT TIMER</header>
+<main>
+<section class="card">
+  <div class="row">
+    <div><label>Atleet</label><input id="athlete" placeholder="Naam"></div>
+    <div><label>Afstand</label><select id="distance"><option>20</option><option selected>30</option><option>40</option><option>50</option><option>60</option><option>100</option></select></div>
+  </div>
+</section>
+
+<section class="card">
+  <div id="stage">
+    <video id="video" autoplay muted playsinline></video>
+    <div id="line"></div>
+  </div>
+  <p class="small">Plaats de smartphone zijwaarts naast de finish. Zet de gele lijn precies op de finishlijn. Zorg dat de loper duidelijk zichtbaar is.</p>
+  <div class="row">
+    <button id="camera">Camera starten</button>
+    <button id="calibrate" class="secondary" disabled>Lijn links/rechts</button>
+  </div>
+</section>
+
+<section class="card">
+  <div id="timer">0.000</div>
+  <div id="status" class="status">Klaar om te starten</div>
+  <div class="row" style="margin-top:10px">
+    <button id="start" disabled>START · 3-2-1</button>
+    <button id="stop" class="secondary" disabled>Handmatig stoppen</button>
+    <button id="reset" class="secondary">Reset</button>
+  </div>
+</section>
+
+<section class="card">
+  <h3 style="margin-top:0">Laatste tijden</h3>
+  <table><thead><tr><th>Atleet</th><th>Afstand</th><th>Tijd</th></tr></thead><tbody id="results"></tbody></table>
+</section>
+
+<section class="card small">
+  <b>Prototype</b><br>
+  De automatische finishdetectie gebruikt eenvoudige camerabeeld-analyse. Dit is bedoeld voor training en moet eerst op de piste getest en gekalibreerd worden. Het vervangt geen officiële FAT-timing.
+</section>
+</main>
+
+<script>
+(() => {
+const $=id=>document.getElementById(id);
+const video=$('video'), stage=$('stage'), line=$('line'), timer=$('timer'), status=$('status');
+const cameraBtn=$('camera'), startBtn=$('start'), stopBtn=$('stop'), resetBtn=$('reset'), calBtn=$('calibrate');
+let stream=null, running=false, startedAt=0, raf=0, lastFrame=null, crossingArmed=false;
+let linePct=.68, direction=1, lastCross=0;
+
+function setStatus(s){status.textContent=s}
+function fmt(ms){return (ms/1000).toFixed(3)}
+function renderLine(){line.style.left=(linePct*100)+'%'}
+renderLine();
+
+cameraBtn.onclick=async()=>{
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    video.srcObject=stream;
+    await video.play();
+    cameraBtn.textContent='Camera actief';
+    cameraBtn.disabled=true; startBtn.disabled=false; calBtn.disabled=false;
+    setStatus('Camera actief · plaats de loper buiten beeld');
+    startDetectionLoop();
+  }catch(e){setStatus('Camera kon niet starten. Geef de browser cameratoegang.')}
+};
+
+calBtn.onclick=()=>{
+  linePct += .03*direction;
+  if(linePct>.9){linePct=.9;direction=-1}
+  if(linePct<.1){linePct=.1;direction=1}
+  renderLine();
+};
+
+startBtn.onclick=()=>{
+  if(running)return;
+  running=true; crossingArmed=true; lastCross=0;
+  startBtn.disabled=true; stopBtn.disabled=false;
+  let n=3; timer.textContent='3.000'; setStatus('Maak je klaar…');
+  const tick=()=>{
+    if(n>0){timer.textContent=n+'.000'; n--; setTimeout(tick,1000)}
+    else{
+      startedAt=performance.now();
+      setStatus('LOPEN!');
+      timerLoop();
+    }
+  }; setTimeout(tick,350);
+};
+
+function timerLoop(){
+  if(!running)return;
+  timer.textContent=fmt(performance.now()-startedAt);
+  requestAnimationFrame(timerLoop);
+}
+
+stopBtn.onclick=()=>finish();
+resetBtn.onclick=()=>{
+  running=false; crossingArmed=false; cancelAnimationFrame(raf);
+  timer.textContent='0.000'; setStatus('Klaar om te starten');
+  startBtn.disabled=!stream; stopBtn.disabled=true;
+};
+
+function finish(){
+  if(!running)return;
+  const ms=performance.now()-startedAt;
+  running=false; crossingArmed=false; stopBtn.disabled=true; startBtn.disabled=false;
+  timer.textContent=fmt(ms); setStatus('FINISH · '+fmt(ms)+' s');
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td>'+escapeHtml($('athlete').value||'Onbekend')+'</td><td>'+$('distance').value+' m</td><td><b>'+fmt(ms)+' s</b></td>';
+  $('results').prepend(tr);
+}
+
+function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+function startDetectionLoop(){
+  const c=document.createElement('canvas'), ctx=c.getContext('2d',{willReadFrequently:true});
+  let prev=null, stable=0;
+  function loop(){
+    raf=requestAnimationFrame(loop);
+    if(video.readyState<2 || !crossingArmed || !running)return;
+    const w=160,h=100; c.width=w;c.height=h;ctx.drawImage(video,0,0,w,h);
+    const data=ctx.getImageData(0,0,w,h).data;
+    if(!prev){prev=new Uint8ClampedArray(data);return}
+    const x=Math.round(w*linePct), span=8;
+    let diff=0, count=0;
+    for(let y=8;y<h-8;y+=2){
+      for(let dx=-span;dx<=span;dx+=2){
+        const xx=Math.max(0,Math.min(w-1,x+dx)), i=(y*w+xx)*4;
+        const d=Math.abs(data[i]-prev[i])+Math.abs(data[i+1]-prev[i+1])+Math.abs(data[i+2]-prev[i+2]);
+        if(d>85)diff++;
+        count++;
+      }
+    }
+    const ratio=diff/count;
+    prev.set(data);
+    // Require several strong frames to reduce false triggers from noise/light.
+    if(ratio>.18) stable++; else stable=Math.max(0,stable-1);
+    if(stable>=3 && performance.now()-lastCross>1200){
+      lastCross=performance.now(); stable=0; finish();
+    }
+  }
+  loop();
+}
+})();
+</script>
+</body>
+</html>
