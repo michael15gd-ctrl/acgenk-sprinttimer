@@ -1578,7 +1578,12 @@ function setupDataChannel(){
     pairConnected=true;
     setPairStatus('VERBONDEN',true);
     $('nextAfterPair').disabled=false;
-    if(role==='arrival') startClockSync();
+    if(role==='arrival') {
+      startClockSync();
+    } else {
+      clockReady=false;
+      $('startUnitStatus').textContent='Verbonden · wachten op kloksynchronisatie…';
+    }
   });
   dataChannel.on('close',()=>{
     pairConnected=false;clockReady=false;
@@ -1603,7 +1608,7 @@ function createArrivalPeer(){
     const url=new URL(location.href);
     url.searchParams.set('role','start');
     url.searchParams.set('peer',peerId);
-    url.searchParams.set('v','14');
+    url.searchParams.set('v','16');
     $('offerQr').innerHTML='';
     renderQr($('offerQr'),url.toString());
     $('offerQr').scrollIntoView({behavior:'smooth',block:'center'});
@@ -1679,6 +1684,11 @@ function startClockSync(){
       if(syncSamples.length){
         syncSamples.sort((a,b)=>a-b);clockOffset=syncSamples[Math.floor(syncSamples.length/2)];clockReady=true;
         setPairStatus('VERBONDEN · klokverschil '+clockOffset.toFixed(1)+' ms',true);
+        // Laat ook de starttelefoon weten dat de klokken gesynchroniseerd zijn.
+        send({type:'CLOCK_READY',clockOffset});
+        if(role==='start'){
+          $('startUnitStatus').textContent='Verbonden · klokken gesynchroniseerd';
+        }
       }
       return;
     }
@@ -1690,6 +1700,13 @@ function handleSignal(raw){
   if(!m)return;
   if(m.type==='SYNC1'&&role==='start'){const t1=absNow();const t2=absNow();send({type:'SYNC2',id:m.id,t0:m.t0,t1,t2});return}
   if(m.type==='SYNC2'&&role==='arrival'){const t3=absNow();const off=((Number(m.t1)-Number(m.t0))+(Number(m.t2)-t3))/2;syncSamples.push(off);return}
+  if(m.type==='CLOCK_READY'&&role==='start'){
+    clockOffset=Number(m.clockOffset)||0;
+    clockReady=true;
+    setPairStatus('VERBONDEN · klokken gesynchroniseerd',true);
+    $('startUnitStatus').textContent='Klaar om te starten';
+    return;
+  }
   if(m.type==='START_AT'&&role==='arrival'){scheduleRemoteStart(Number(m.startAtStartClock),Number(m.correction||0),m.runId);return}
   if(m.type==='RUN_STARTED'&&role==='arrival')return;
   if(m.type==='FINISH_RESULT'&&role==='start'){$('startUnitStatus').textContent='Aankomst: '+fmt(Number(m.ms))+' s';$('startCountdown').textContent=fmt(Number(m.ms))+' s';return}
@@ -1723,7 +1740,17 @@ $('camera').addEventListener('click',async()=>{try{await unlockAudio();if(!navig
 calBtn.addEventListener('click',()=>{linePct+=.02*direction;if(linePct>.9){linePct=.9;direction=-1}if(linePct<.1){linePct=.1;direction=1}renderLine()});
 
 function setupArrivalTimerView(){$('arrivalTimerView').classList.remove('hidden');$('startTimerView').classList.add('hidden');$('timerTitle').textContent='Timing';$('liveBadge').textContent='LIVE CAMERA';$('backTimer').textContent='Terug naar camera';$('toResults').disabled=!readyForResult;$('localStartControls').classList.toggle('hidden',useRemoteStart);if(useRemoteStart){status.textContent=pairConnected?'Wachten op starttelefoon…':'Starttelefoon niet verbonden';startMessage.textContent='';}setReadyIndicators()}
-function setupStartUnitView(){$('arrivalTimerView').classList.add('hidden');$('startTimerView').classList.remove('hidden');$('timerTitle').textContent='Starttelefoon';$('liveBadge').textContent='VERBONDEN';$('liveBadge').style.background='#2c67b1';$('liveBadge').style.color='#fff';$('backTimer').textContent='Terug naar koppelen';$('toResults').disabled=true}
+function setupStartUnitView(){
+  $('arrivalTimerView').classList.add('hidden');
+  $('startTimerView').classList.remove('hidden');
+  $('timerTitle').textContent='Starttelefoon';
+  $('liveBadge').textContent=clockReady?'KLOK GESYNCHRONISEERD':'VERBONDEN';
+  $('liveBadge').style.background=clockReady?'#1b7f3a':'#2c67b1';
+  $('liveBadge').style.color='#fff';
+  $('backTimer').textContent='Terug naar koppelen';
+  $('toResults').disabled=true;
+  $('startUnitStatus').textContent=clockReady?'Klaar om te starten':'Wacht op kloksynchronisatie…';
+}
 
 function captureGray(){if(!canvas||video.readyState<2)return null;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;const gray=new Uint8Array(canvas.width*canvas.height);for(let i=0,p=0;i<d.length;i+=4,p++)gray[p]=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0;return gray}
 function detectionLoop(){cancelAnimationFrame(detectionRaf);const loop=()=>{if(!canvas||video.readyState<2){detectionRaf=requestAnimationFrame(loop);return}const current=captureGray();if(current&&previous){const w=canvas.width,h=canvas.height,x=Math.round(w*linePct),band=10;let bgChanged=0,motionChanged=0,total=0;for(let y=8;y<h-8;y+=2){for(let dx=-band;dx<=band;dx+=2){const xx=Math.max(0,Math.min(w-1,x+dx)),p=y*w+xx;if(background&&Math.abs(current[p]-background[p])>28)bgChanged++;if(Math.abs(current[p]-previous[p])>28)motionChanged++;total++}}const ratio=Math.max(bgChanged/total,motionChanged/total);if(running&&performance.now()-startedAt>500){if(ratio>.10)framesOver++;else framesOver=Math.max(0,framesOver-1);if(framesOver>=3&&performance.now()-lastCross>1200){lastCross=performance.now();framesOver=0;finish(false)}}previous=current}else if(current){previous=current}detectionRaf=requestAnimationFrame(loop)};detectionRaf=requestAnimationFrame(loop)}
