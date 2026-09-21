@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111111">
-<title>AC Genk Sprint Timer v1.0 gunshot fix</title>
+<title>AC Genk Sprint Timer v1.0 – één startgeluid</title>
 <style>
 :root{--yellow:#ffd400;--black:#111;--dark:#1d1d1d;--muted:#aaa;--green:#1b7f3a;--red:#b52b2b}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Arial,sans-serif;background:#111;color:#fff}
@@ -58,35 +58,24 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 
       <div class="sequence-box">
         <div class="small">Volgorde bij START</div>
-        <div class="sequence-preview"><span id="previewPart1">Op uw plaatsen</span><span class="sequence-arrow">→</span><span id="previewPart2">Klaar</span><span class="sequence-arrow">→</span><span>STARTGELUID + STARTSCHOT</span></div>
+        <div class="sequence-preview"><span id="previewPart1">Op uw plaatsen</span><span class="sequence-arrow">→</span><span id="previewPart2">Klaar</span><span class="sequence-arrow">→</span><span>STARTGELUID</span></div>
       </div>
 
       <div class="sound-box">
         <div class="row">
           <div>
-            <label for="startSoundChoice">Startgeluid uit de app</label>
+            <label for="startSoundChoice">Startgeluid</label>
             <select id="startSoundChoice">
               <option value="sounds/start.wav" selected>start.wav</option>
               <option value="sounds/gunshot.mp3">gunshot.mp3</option>
             </select>
-            <label for="startSoundFile" style="margin-top:8px">Of kies zelf een bestand</label>
+            <label for="startSoundFile" style="margin-top:8px">Of kies zelf één startgeluid</label>
             <input id="startSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
             <div id="startSoundName" class="file-name">Ingebouwd: start.wav</div>
+            <div class="small" style="margin-top:6px">Er wordt precies één startgeluid gebruikt. Kies bijvoorbeeld start.wav of gunshot.mp3.</div>
           </div>
           <div>
-            <label for="startShotChoice">Startschot bij het starten van de timer</label>
-            <select id="startShotChoice">
-              <option value="sounds/gunshot.mp3" selected>gunshot.mp3</option>
-              <option value="sounds/start.wav">start.wav</option>
-              <option value="none">Geen startschot</option>
-            </select>
-            <label for="startShotFile" style="margin-top:8px">Of kies zelf een startschot</label>
-            <input id="startShotFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
-            <div id="startShotName" class="file-name">Ingebouwd: gunshot.mp3</div>
-            <div class="small" style="margin-top:6px">Het startschot wordt op hetzelfde startmoment afgespeeld als het startgeluid en de timer.</div>
-          </div>
-          <div>
-            <label for="finishSoundChoice">Finishgeluid uit de app</label>
+            <label for="finishSoundChoice">Finishgeluid</label>
             <select id="finishSoundChoice">
               <option value="sounds/finish.wav" selected>finish.wav</option>
               <option value="sounds/gunshot.mp3">gunshot.mp3</option>
@@ -99,10 +88,9 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
         <div class="row" style="margin-top:10px;align-items:center">
           <label class="check"><input id="soundOn" type="checkbox" checked> Geluiden aan</label>
           <button id="testSound" type="button" class="secondary">Test startgeluid</button>
-          <button id="testStartShot" type="button" class="secondary">Test startschot</button>
           <button id="testFinishSound" type="button" class="secondary">Test finishgeluid</button>
         </div>
-        <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg <b>gunshot.mp3</b> toe aan de map <b>sounds</b> in GitHub. Het startschot wordt bij het starten van de timer afgespeeld.</div>
+        <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg <b>gunshot.mp3</b> toe aan de map <b>sounds</b> in GitHub als je dat als startgeluid wilt kiezen.</div>
       </div>
 
       <div class="hint" style="margin-top:12px">De eigen geluiden worden alleen op dit toestel gebruikt. Ze hoeven niet naar GitHub of Vercel te worden geüpload.</div>
@@ -176,7 +164,6 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 </main>
 
 <audio id="startAudio" preload="auto" src="sounds/start.wav"></audio>
-<audio id="startShotAudio" preload="auto" src="sounds/gunshot.mp3"></audio>
 <audio id="finishAudio" preload="auto" src="sounds/finish.wav"></audio>
 
 <script>
@@ -186,14 +173,14 @@ const windows={setup:$('windowSetup'),camera:$('windowCamera'),timer:$('windowTi
 const video=$('video'),timerStage=$('timerStage'),timer= $('timer'),status=$('status'),startMessage=$('startMessage');
 const cameraBtn=$('camera'),startBtn=$('start'),stopBtn=$('stop'),resetBtn=$('reset'),calBtn=$('calibrate');
 const toCamera=$('toCamera'),toTimer=$('toTimer'),toResults=$('toResults'),backSetup=$('backSetup'),backCamera=$('backCamera');
-const soundOn=$('soundOn'),testSound=$('testSound'),testStartShot=$('testStartShot'),testFinishSound=$('testFinishSound');
-const startAudio=$('startAudio'),startShotAudio=$('startShotAudio'),finishAudio=$('finishAudio');
-const startSoundFile=$('startSoundFile'),startShotFile=$('startShotFile'),finishSoundFile=$('finishSoundFile');
-const startSoundChoice=$('startSoundChoice'),startShotChoice=$('startShotChoice'),finishSoundChoice=$('finishSoundChoice');
+const soundOn=$('soundOn'),testSound=$('testSound'),testFinishSound=$('testFinishSound');
+const startAudio=$('startAudio'),finishAudio=$('finishAudio');
+const startSoundFile=$('startSoundFile'),finishSoundFile=$('finishSoundFile');
+const startSoundChoice=$('startSoundChoice'),finishSoundChoice=$('finishSoundChoice');
 const soundStatus=$('soundStatus');
 let stream=null,running=false,sequenceActive=false,startedAt=0,linePct=.68,direction=1,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
 let readyForResult=false,lastMs=0,startSequenceToken=0,detectionRaf=0,timerInterval=0,sequenceTimers=[];
-let startObjectUrl=null,startShotObjectUrl=null,finishObjectUrl=null,audioUnlocked=false;
+let startObjectUrl=null,finishObjectUrl=null,audioUnlocked=false;
 
 function showWindow(name){
   Object.values(windows).forEach(w=>w.classList.remove('active'));
@@ -241,7 +228,7 @@ function setReadyIndicators(){
 async function unlockAudio(){
   try{
     let activated=false;
-    for(const a of [startAudio,startShotAudio,finishAudio]){
+    for(const a of [startAudio,finishAudio]){
       try{
         a.muted=true;
         const p=a.play();
@@ -294,7 +281,6 @@ toTimer.addEventListener('click',()=>{if(!stream)return;resetTimingState();$('su
 toResults.addEventListener('click',()=>{if(!readyForResult)return;showWindow('results')});
 
 testSound.addEventListener('click',()=>testAudio(startAudio,'Startgeluid'));
-testStartShot.addEventListener('click',()=>{const src=startShotChoice.value;if(src==='none'){soundStatus.textContent='Startschot staat uit.';return;}testAudio(startShotAudio,'Startschot')});
 testFinishSound.addEventListener('click',()=>testAudio(finishAudio,'Finishgeluid'));
 soundOn.addEventListener('change',()=>{if(soundOn.checked)unlockAudio()});
 
@@ -312,20 +298,6 @@ async function applyBuiltinStartSound(src){
   await unlockAudio();
   soundStatus.textContent='Startgeluid ingesteld op '+src.split('/').pop()+'.';
 }
-async function applyBuiltinStartShot(src){
-  if(startShotObjectUrl){URL.revokeObjectURL(startShotObjectUrl);startShotObjectUrl=null;}
-  if(src==='none'){
-    setAudioSource(startShotAudio,'');
-    $('startShotName').textContent='Startschot uitgeschakeld';
-    soundStatus.textContent='Startschot uitgeschakeld.';
-    return;
-  }
-  setAudioSource(startShotAudio,src);
-  $('startShotName').textContent='Ingebouwd: '+src.split('/').pop();
-  await unlockAudio();
-  soundStatus.textContent='Startschot ingesteld op '+src.split('/').pop()+'.';
-}
-
 async function applyBuiltinFinishSound(src){
   if(finishObjectUrl){URL.revokeObjectURL(finishObjectUrl);finishObjectUrl=null;}
   setAudioSource(finishAudio,src);
@@ -335,7 +307,6 @@ async function applyBuiltinFinishSound(src){
 }
 
 startSoundChoice.addEventListener('change',e=>applyBuiltinStartSound(e.target.value));
-startShotChoice.addEventListener('change',e=>applyBuiltinStartShot(e.target.value));
 finishSoundChoice.addEventListener('change',e=>applyBuiltinFinishSound(e.target.value));
 
 startSoundFile.addEventListener('change',async e=>{
@@ -345,15 +316,6 @@ startSoundFile.addEventListener('change',async e=>{
   setAudioSource(startAudio,startObjectUrl);
   $('startSoundName').textContent='Eigen bestand: '+file.name;
   soundStatus.textContent='Eigen startgeluid geladen: '+file.name;
-  await unlockAudio();
-});
-startShotFile.addEventListener('change',async e=>{
-  const file=e.target.files&&e.target.files[0];if(!file)return;
-  if(startShotObjectUrl)URL.revokeObjectURL(startShotObjectUrl);
-  startShotObjectUrl=URL.createObjectURL(file);
-  setAudioSource(startShotAudio,startShotObjectUrl);
-  $('startShotName').textContent='Eigen bestand: '+file.name;
-  soundStatus.textContent='Eigen startschot geladen: '+file.name;
   await unlockAudio();
 });
 finishSoundFile.addEventListener('change',async e=>{
@@ -404,17 +366,13 @@ startBtn.addEventListener('click',async()=>{
     sequenceTimers.push(setTimeout(async()=>{
       if(!sequenceActive||token!==startSequenceToken)return;
       sequenceActive=false;
-      // Timer, startgeluid en startschot worden exact in hetzelfde startmoment geactiveerd.
+      // Het gekozen startgeluid is het enige startsignaal.
+      // De timer start direct wanneer het afspelen van dit geluid wordt gestart.
       const startMoment=performance.now();
       startedAt=startMoment;
       running=true;
-      const shotSrc=startShotChoice.value;
-      const startPromise=playAudio(startAudio);
-      const shotPromise=shotSrc==='none'?Promise.resolve(false):playAudio(startShotAudio);
-      Promise.all([startPromise,shotPromise]).then(([playedStart,playedShot])=>{
-        if(!playedStart&&!playedShot)startMessage.textContent='START';
-        else startMessage.textContent='LOPEN!';
-      });
+      startMessage.textContent='LOPEN!';
+      playAudio(startAudio);
       $('indicator').textContent='DETECTIE ACTIEF';$('indicator').style.background='#ffd400';$('indicator').style.color='#111';
       $('timerIndicator').textContent='DETECTIE ACTIEF';$('timerIndicator').style.background='#ffd400';$('timerIndicator').style.color='#111';
       $('liveBadge').textContent='TIMING ACTIEF';$('liveBadge').style.background='#ffd400';$('liveBadge').style.color='#111';
