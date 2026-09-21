@@ -64,14 +64,24 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
       <div class="sound-box">
         <div class="row">
           <div>
-            <label for="startSoundFile">Startgeluid</label>
-            <input id="startSoundFile" type="file" accept="audio/*">
-            <div id="startSoundName" class="file-name">Standaardgeluid uit de app</div>
+            <label for="startSoundChoice">Startgeluid uit de app</label>
+            <select id="startSoundChoice">
+              <option value="sounds/start.wav" selected>start.wav</option>
+              <option value="sounds/gunshot.mp3">gunshot.mp3</option>
+            </select>
+            <label for="startSoundFile" style="margin-top:8px">Of kies zelf een bestand</label>
+            <input id="startSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
+            <div id="startSoundName" class="file-name">Ingebouwd: start.wav</div>
           </div>
           <div>
-            <label for="finishSoundFile">Finishgeluid</label>
-            <input id="finishSoundFile" type="file" accept="audio/*">
-            <div id="finishSoundName" class="file-name">Standaardgeluid uit de app</div>
+            <label for="finishSoundChoice">Finishgeluid uit de app</label>
+            <select id="finishSoundChoice">
+              <option value="sounds/finish.wav" selected>finish.wav</option>
+              <option value="sounds/gunshot.mp3">gunshot.mp3</option>
+            </select>
+            <label for="finishSoundFile" style="margin-top:8px">Of kies zelf een bestand</label>
+            <input id="finishSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
+            <div id="finishSoundName" class="file-name">Ingebouwd: finish.wav</div>
           </div>
         </div>
         <div class="row" style="margin-top:10px;align-items:center">
@@ -79,7 +89,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
           <button id="testSound" type="button" class="secondary">Test startgeluid</button>
           <button id="testFinishSound" type="button" class="secondary">Test finishgeluid</button>
         </div>
-        <div id="soundStatus" class="small sound-note">Kies een eigen audiobestand om het standaardgeluid te vervangen.</div>
+        <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg gunshot.mp3 toe aan de map <b>sounds</b> in GitHub om dit ingebouwde geluid te gebruiken.</div>
       </div>
 
       <div class="hint" style="margin-top:12px">De eigen geluiden worden alleen op dit toestel gebruikt. Ze hoeven niet naar GitHub of Vercel te worden geüpload.</div>
@@ -165,6 +175,7 @@ const toCamera=$('toCamera'),toTimer=$('toTimer'),toResults=$('toResults'),backS
 const soundOn=$('soundOn'),testSound=$('testSound'),testFinishSound=$('testFinishSound');
 const startAudio=$('startAudio'),finishAudio=$('finishAudio');
 const startSoundFile=$('startSoundFile'),finishSoundFile=$('finishSoundFile');
+const startSoundChoice=$('startSoundChoice'),finishSoundChoice=$('finishSoundChoice');
 const soundStatus=$('soundStatus');
 let stream=null,running=false,sequenceActive=false,startedAt=0,linePct=.68,direction=1,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
 let readyForResult=false,lastMs=0,startSequenceToken=0,detectionRaf=0,timerInterval=0,sequenceTimers=[];
@@ -215,16 +226,23 @@ function setReadyIndicators(){
 }
 async function unlockAudio(){
   try{
-    const audios=[startAudio,finishAudio];
-    for(const a of audios){
-      a.muted=true;
-      const p=a.play();
-      if(p&&typeof p.then==='function') await p.catch(()=>{});
-      a.pause();a.currentTime=0;a.muted=false;
+    let activated=false;
+    for(const a of [startAudio,finishAudio]){
+      try{
+        a.muted=true;
+        const p=a.play();
+        if(p&&typeof p.then==='function') await p.catch(()=>{});
+        a.pause();a.currentTime=0;a.muted=false;
+        activated=true;
+      }catch(e){
+        a.muted=false;
+      }
     }
-    audioUnlocked=true;
-    soundStatus.textContent='Geluid is geactiveerd op dit toestel.';
-    return true;
+    audioUnlocked=activated;
+    if(activated && !soundStatus.textContent.includes('Eigen') && !soundStatus.textContent.includes('ingesteld')){
+      soundStatus.textContent='Geluid is geactiveerd op dit toestel.';
+    }
+    return activated;
   }catch(e){soundStatus.textContent='Geluid kon niet worden geactiveerd.';return false}
 }
 async function playAudio(audio){
@@ -265,18 +283,47 @@ testSound.addEventListener('click',()=>testAudio(startAudio,'Startgeluid'));
 testFinishSound.addEventListener('click',()=>testAudio(finishAudio,'Finishgeluid'));
 soundOn.addEventListener('change',()=>{if(soundOn.checked)unlockAudio()});
 
+function setAudioSource(audio, src){
+  audio.pause();
+  audio.currentTime=0;
+  audio.src=src;
+  audio.load();
+}
+
+async function applyBuiltinStartSound(src){
+  if(startObjectUrl){URL.revokeObjectURL(startObjectUrl);startObjectUrl=null;}
+  setAudioSource(startAudio,src);
+  $('startSoundName').textContent='Ingebouwd: '+src.split('/').pop();
+  await unlockAudio();
+  soundStatus.textContent='Startgeluid ingesteld op '+src.split('/').pop()+'.';
+}
+async function applyBuiltinFinishSound(src){
+  if(finishObjectUrl){URL.revokeObjectURL(finishObjectUrl);finishObjectUrl=null;}
+  setAudioSource(finishAudio,src);
+  $('finishSoundName').textContent='Ingebouwd: '+src.split('/').pop();
+  await unlockAudio();
+  soundStatus.textContent='Finishgeluid ingesteld op '+src.split('/').pop()+'.';
+}
+
+startSoundChoice.addEventListener('change',e=>applyBuiltinStartSound(e.target.value));
+finishSoundChoice.addEventListener('change',e=>applyBuiltinFinishSound(e.target.value));
+
 startSoundFile.addEventListener('change',async e=>{
   const file=e.target.files&&e.target.files[0];if(!file)return;
   if(startObjectUrl)URL.revokeObjectURL(startObjectUrl);
-  startObjectUrl=URL.createObjectURL(file);startAudio.src=startObjectUrl;startAudio.load();
-  $('startSoundName').textContent=file.name;
+  startObjectUrl=URL.createObjectURL(file);
+  setAudioSource(startAudio,startObjectUrl);
+  $('startSoundName').textContent='Eigen bestand: '+file.name;
+  soundStatus.textContent='Eigen startgeluid geladen: '+file.name;
   await unlockAudio();
 });
 finishSoundFile.addEventListener('change',async e=>{
   const file=e.target.files&&e.target.files[0];if(!file)return;
   if(finishObjectUrl)URL.revokeObjectURL(finishObjectUrl);
-  finishObjectUrl=URL.createObjectURL(file);finishAudio.src=finishObjectUrl;finishAudio.load();
-  $('finishSoundName').textContent=file.name;
+  finishObjectUrl=URL.createObjectURL(file);
+  setAudioSource(finishAudio,finishObjectUrl);
+  $('finishSoundName').textContent='Eigen bestand: '+file.name;
+  soundStatus.textContent='Eigen finishgeluid geladen: '+file.name;
   await unlockAudio();
 });
 
