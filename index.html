@@ -36,6 +36,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 .sync-flash{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,212,0,.96);color:#111;z-index:50;font-size:64px;font-weight:900}.sync-flash.show{display:flex}
 </style>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 /* Embedded QR encoder for offline-friendly session QR generation. Based on the QRCode JavaScript implementation by Kazuhiko Arase (MIT). */
 (function(){
@@ -1450,9 +1451,20 @@ module.exports = QRCode;
 
       <div id="startTimerView" class="remote-start hidden">
         <div class="pair-status ok" id="startUnitConnection">Verbonden met aankomsttelefoon</div>
+        <div class="sound-box" style="margin-top:12px">
+          <h3>Startgeluid</h3>
+          <label for="remoteStartSoundChoice">Kies startgeluid</label>
+          <select id="remoteStartSoundChoice"><option value="sounds/start.wav">start.wav</option><option value="sounds/gunshot.wav">gunshot.wav</option></select>
+          <label for="remoteStartSoundFile" style="margin-top:8px">Of kies zelf één geluid</label>
+          <input id="remoteStartSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
+          <div id="remoteStartSoundName" class="file-name">Ingebouwd: start.wav</div>
+          <button id="remoteTestStartSound" type="button" class="secondary" style="margin-top:8px">Test startgeluid</button>
+          <div style="margin-top:12px"><label for="remoteCorrection">Klokcorrectie</label><input id="remoteCorrection" type="range" min="-500" max="500" step="10" value="0"><div class="small" id="remoteCorrectionValue">0 ms</div></div>
+        </div>
         <div id="startCountdown" class="countdown">KLAAR</div>
         <div id="startUnitStatus" class="status">Druk op START om de startprocedure te beginnen.</div>
         <button id="startUnitButton" class="big-button">START</button>
+        <button id="newRemoteRun" class="secondary hidden" style="margin-top:10px">Nieuwe opname</button>
         <button id="cancelStartUnit" class="secondary" style="margin-top:10px">Reset startprocedure</button>
       </div>
 
@@ -1479,11 +1491,14 @@ const cameraBtn=$('camera'),startBtn=$('start'),stopBtn=$('stop'),resetBtn=$('re
 const startAudio=$('startAudio'),finishAudio=$('finishAudio');
 const soundOn=$('soundOn'),testSound=$('testSound'),testFinishSound=$('testFinishSound');
 const startSoundFile=$('startSoundFile'),finishSoundFile=$('finishSoundFile'),startSoundChoice=$('startSoundChoice'),finishSoundChoice=$('finishSoundChoice');
+const remoteStartSoundChoice=$('remoteStartSoundChoice'),remoteStartSoundFile=$('remoteStartSoundFile'),remoteStartSoundName=$('remoteStartSoundName'),remoteTestStartSound=$('remoteTestStartSound'),remoteCorrection=$('remoteCorrection'),remoteCorrectionValue=$('remoteCorrectionValue');
+const openQrScanner=$('openQrScanner'),closeQrScanner=$('closeQrScanner'),qrScanner=$('qrScanner'),qrVideo=$('qrVideo'),qrCanvas=$('qrCanvas'),qrScanStatus=$('qrScanStatus');
 const startCorrection=$('startCorrection'),startCorrectionValue=$('startCorrectionValue'),testSync=$('testSync'),syncStatus=$('syncStatus');
 const syncFlash=$('syncFlash');
 let role='arrival',useRemoteStart=false,stream=null,linePct=.68,direction=1,canvas=null,background=null,previous=null;
 let running=false,sequenceActive=false,startedAt=0,lastCross=0,framesOver=0,detectionRaf=0,timerInterval=0,sequenceTimers=[];
 let readyForResult=false,lastMs=0,startSequenceToken=0,startObjectUrl=null,finishObjectUrl=null;
+let qrStream=null,qrScanRaf=0,remoteStartObjectUrl=null;
 let pc=null,dataChannel=null,pairConnected=false,clockOffset=0,clockReady=false,syncSamples=[],syncPending=new Map(),syncTimer=0;
 let remoteStartTarget=null,remoteStartTimer=null,remotePrepTimer=null;
 
@@ -1514,10 +1529,15 @@ $('roleArrival').addEventListener('change',updateRoleUi);$('roleStart').addEvent
 
 function setAudioSource(audio,src){audio.pause();audio.currentTime=0;audio.src=src;audio.load()}
 async function applyBuiltinStartSound(src){if(startObjectUrl){URL.revokeObjectURL(startObjectUrl);startObjectUrl=null}setAudioSource(startAudio,src);$('startSoundName').textContent='Ingebouwd: '+src.split('/').pop();await unlockAudio();$('soundStatus').textContent='Startgeluid ingesteld op '+src.split('/').pop()+'.'}
+async function applyRemoteStartSound(src){if(remoteStartObjectUrl){URL.revokeObjectURL(remoteStartObjectUrl);remoteStartObjectUrl=null}setAudioSource(startAudio,src);remoteStartSoundName.textContent='Ingebouwd: '+src.split('/').pop();await unlockAudio();}
 async function applyBuiltinFinishSound(src){if(finishObjectUrl){URL.revokeObjectURL(finishObjectUrl);finishObjectUrl=null}setAudioSource(finishAudio,src);$('finishSoundName').textContent='Ingebouwd: '+src.split('/').pop();await unlockAudio();$('soundStatus').textContent='Finishgeluid ingesteld op '+src.split('/').pop()+'.'}
 startSoundChoice.addEventListener('change',e=>applyBuiltinStartSound(e.target.value));finishSoundChoice.addEventListener('change',e=>applyBuiltinFinishSound(e.target.value));
 startSoundFile.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;if(startObjectUrl)URL.revokeObjectURL(startObjectUrl);startObjectUrl=URL.createObjectURL(f);setAudioSource(startAudio,startObjectUrl);$('startSoundName').textContent='Eigen bestand: '+f.name;await unlockAudio();$('soundStatus').textContent='Eigen startgeluid geladen: '+f.name});
 finishSoundFile.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;if(finishObjectUrl)URL.revokeObjectURL(finishObjectUrl);finishObjectUrl=URL.createObjectURL(f);setAudioSource(finishAudio,finishObjectUrl);$('finishSoundName').textContent='Eigen bestand: '+f.name;await unlockAudio();$('soundStatus').textContent='Eigen finishgeluid geladen: '+f.name});
+remoteStartSoundChoice.addEventListener('change',e=>applyRemoteStartSound(e.target.value));
+remoteStartSoundFile.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;if(remoteStartObjectUrl)URL.revokeObjectURL(remoteStartObjectUrl);remoteStartObjectUrl=URL.createObjectURL(f);setAudioSource(startAudio,remoteStartObjectUrl);remoteStartSoundName.textContent='Eigen bestand: '+f.name;await unlockAudio();});
+remoteTestStartSound.addEventListener('click',()=>testAudio(startAudio,'Startgeluid'));
+remoteCorrection.addEventListener('input',e=>{const v=Number(e.target.value)||0;remoteCorrectionValue.textContent=(v>0?'+':'')+v+' ms';localStorage.setItem('acgenk_start_correction',String(v));syncCorrectionUi(v);});
 testSound.addEventListener('click',()=>testAudio(startAudio,'Startgeluid'));testFinishSound.addEventListener('click',()=>testAudio(finishAudio,'Finishgeluid'));soundOn.addEventListener('change',()=>{if(soundOn.checked)unlockAudio()});
 testSync.addEventListener('click',async()=>{await unlockAudio();soundOn.checked=true;const c=getCorrection();syncStatus.textContent='Test correctie '+(c>0?'+':'')+c+' ms';const base=absNow()+800;setTimeout(()=>playAudio(startAudio),800);const visualDelay=Math.max(0,800+c);setTimeout(()=>{syncFlash.classList.add('show');setTimeout(()=>syncFlash.classList.remove('show'),180)},visualDelay)});
 
@@ -1644,6 +1664,37 @@ function connectStartPhone(targetPeer){
   });
 }
 
+async function stopQrScanner(){
+  cancelAnimationFrame(qrScanRaf);
+  if(qrStream){qrStream.getTracks().forEach(t=>t.stop());qrStream=null;}
+  qrVideo.srcObject=null; qrScanner.classList.add('hidden'); openQrScanner.classList.remove('hidden');
+}
+async function startQrScanner(){
+  if(typeof window.jsQR!=='function'){qrScanStatus.textContent='QR-scanner kon niet worden geladen. Open de app met internet en probeer opnieuw.';return;}
+  try{
+    qrStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    qrVideo.srcObject=qrStream; await qrVideo.play(); qrScanner.classList.remove('hidden'); openQrScanner.classList.add('hidden');
+    qrScanStatus.textContent='Richt de camera op de QR-code.';
+    const ctx=qrCanvas.getContext('2d',{willReadFrequently:true});
+    const scan=()=>{
+      if(!qrStream)return;
+      if(qrVideo.readyState>=2 && qrVideo.videoWidth){
+        qrCanvas.width=qrVideo.videoWidth; qrCanvas.height=qrVideo.videoHeight; ctx.drawImage(qrVideo,0,0,qrCanvas.width,qrCanvas.height);
+        const image=ctx.getImageData(0,0,qrCanvas.width,qrCanvas.height);
+        const code=window.jsQR(image.data,image.width,image.height,{inversionAttempts:'attemptBoth'});
+        if(code&&code.data){
+          stopQrScanner();
+          try{const u=new URL(code.data,location.href);const target=u.searchParams.get('peer');if(u.searchParams.get('role')==='start'&&target){$('startPairUrl').textContent='QR-code gelezen · aankomsttelefoon gevonden';$('startPairUrl').classList.remove('hidden');connectStartPhone(target);}else{setPairStatus('QR-code bevat geen geldige startsessie',false)}}catch(e){setPairStatus('Ongeldige QR-code',false)}
+          return;
+        }
+      }
+      qrScanRaf=requestAnimationFrame(scan);
+    };
+    qrScanRaf=requestAnimationFrame(scan);
+  }catch(e){qrScanStatus.textContent='Camera kan niet worden gestart. Geef de app cameratoegang.';}
+}
+openQrScanner.addEventListener('click',startQrScanner); closeQrScanner.addEventListener('click',stopQrScanner);
+
 function initStartFromUrl(){
   const params=new URLSearchParams(location.search);
   if(params.get('role')!=='start')return;
@@ -1709,7 +1760,8 @@ function handleSignal(raw){
   }
   if(m.type==='START_AT'&&role==='arrival'){scheduleRemoteStart(Number(m.startAtStartClock),Number(m.correction||0),m.runId);return}
   if(m.type==='RUN_STARTED'&&role==='arrival')return;
-  if(m.type==='FINISH_RESULT'&&role==='start'){$('startUnitStatus').textContent='Aankomst: '+fmt(Number(m.ms))+' s';$('startCountdown').textContent=fmt(Number(m.ms))+' s';return}
+  if(m.type==='FINISH_RESULT'&&role==='start'){$('startUnitStatus').textContent='Aankomst: '+fmt(Number(m.ms))+' s · klaar voor nieuwe opname';$('startCountdown').textContent=fmt(Number(m.ms))+' s';$('startUnitButton').classList.add('hidden');$('newRemoteRun').classList.remove('hidden');$('cancelStartUnit').classList.remove('hidden');return}
+  if(m.type==='RESET_RUN'&&role==='arrival'){resetTimingState('Klaar voor nieuwe start');setupArrivalTimerView();showWindow('timer');return}
   if(m.type==='CANCEL_START'&&role==='arrival'){if(remoteStartTimer)clearTimeout(remoteStartTimer);if(remotePrepTimer)clearTimeout(remotePrepTimer);resetTimingState('Start geannuleerd door starttelefoon');return}
 }
 
@@ -1749,7 +1801,12 @@ function setupStartUnitView(){
   $('liveBadge').style.color='#fff';
   $('backTimer').textContent='Terug naar koppelen';
   $('toResults').disabled=true;
+  const saved=Number(localStorage.getItem('acgenk_start_correction'));
+  const cv=Number.isFinite(saved)?Math.max(-500,Math.min(500,Math.round(saved/10)*10)):0;
+  remoteCorrection.value=String(cv); remoteCorrectionValue.textContent=(cv>0?'+':'')+cv+' ms';
   $('startUnitStatus').textContent=clockReady?'Klaar om te starten':'Wacht op kloksynchronisatie…';
+  $('startUnitButton').classList.remove('hidden'); $('startUnitButton').disabled=!clockReady;
+  $('newRemoteRun').classList.add('hidden');
 }
 
 function captureGray(){if(!canvas||video.readyState<2)return null;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;const gray=new Uint8Array(canvas.width*canvas.height);for(let i=0,p=0;i<d.length;i+=4,p++)gray[p]=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0;return gray}
@@ -1819,7 +1876,7 @@ function startRemoteSequence(){
   $('startUnitStatus').textContent='Startprocedure bezig…';
   $('startCountdown').textContent=$('startPart1').value.trim()||'Op uw plaatsen';
   // Het geplande startmoment wordt meteen doorgestuurd. De aankomsttelefoon heeft zo ruim de tijd om te plannen.
-  send({type:'START_AT',startAtStartClock:target,correction:getCorrection(),runId:Date.now()});
+  send({type:'START_AT',startAtStartClock:target,correction:Number(remoteCorrection.value)||0,runId:Date.now()});
   const t1=setTimeout(()=>{
     if(token!==startSequenceToken)return;
     $('startCountdown').textContent=$('startPart2').value.trim()||'Klaar';
@@ -1835,8 +1892,15 @@ function startRemoteSequence(){
   },Math.max(0,target-absNow()));
   sequenceTimers.push(t2);
 }
-function scheduleStartEvent(lead){const target=absNow()+Math.max(lead,1000);const token=++startSequenceToken;$('startUnitButton').disabled=true;$('startUnitStatus').textContent='START wordt gegeven…';$('startCountdown').textContent='3…';send({type:'START_AT',startAtStartClock:target,correction:getCorrection(),runId:Date.now()});setTimeout(()=>{$('startCountdown').textContent='START';playAudio(startAudio);setTimeout(()=>{$('startCountdown').textContent='LOPEN!';$('startUnitStatus').textContent='Startsignaal gegeven.'},500)},Math.max(0,target-absNow()-10))}
-$('startUnitButton').addEventListener('click',async()=>{await unlockAudio();startRemoteSequence()});$('cancelStartUnit').addEventListener('click',()=>{startSequenceToken++;clearSequenceTimers();$('startUnitButton').disabled=false;$('startUnitStatus').textContent='Druk op START om de startprocedure te beginnen.';$('startCountdown').textContent='KLAAR';send({type:'CANCEL_START'})});
+function scheduleStartEvent(lead){const target=absNow()+Math.max(lead,1000);const token=++startSequenceToken;$('startUnitButton').disabled=true;$('startUnitStatus').textContent='START wordt gegeven…';$('startCountdown').textContent='3…';send({type:'START_AT',startAtStartClock:target,correction:Number(remoteCorrection.value)||0,runId:Date.now()});setTimeout(()=>{$('startCountdown').textContent='START';playAudio(startAudio);setTimeout(()=>{$('startCountdown').textContent='LOPEN!';$('startUnitStatus').textContent='Startsignaal gegeven.'},500)},Math.max(0,target-absNow()-10))}
+$('startUnitButton').addEventListener('click',async()=>{await unlockAudio();startRemoteSequence()});$('newRemoteRun').addEventListener('click',()=>{
+  if(role!=='start'||!pairConnected)return;
+  clearSequenceTimers(); startSequenceToken++;
+  send({type:'RESET_RUN'});
+  $('newRemoteRun').classList.add('hidden'); $('startUnitButton').classList.remove('hidden'); $('startUnitButton').disabled=!clockReady;
+  $('startCountdown').textContent='KLAAR'; $('startUnitStatus').textContent=clockReady?'Klaar om te starten':'Wacht op kloksynchronisatie…';
+});
+$('cancelStartUnit').addEventListener('click',()=>{startSequenceToken++;clearSequenceTimers();$('startUnitButton').disabled=false;$('startUnitStatus').textContent='Druk op START om de startprocedure te beginnen.';$('startCountdown').textContent='KLAAR';send({type:'CANCEL_START'})});
 
 $('stop').addEventListener('click',()=>{if(sequenceActive){resetTimingState('Start afgebroken');return}finish(true)});$('reset').addEventListener('click',()=>resetTimingState());
 function finish(manual=false){if(!running)return;const ms=performance.now()-startedAt;running=false;sequenceActive=false;clearSequenceTimers();stopTimerDisplay();framesOver=0;lastMs=ms;readyForResult=true;toResults.disabled=false;stopBtn.disabled=true;startBtn.disabled=false;timer.textContent=fmt(ms);status.textContent=(manual?'HANDMATIG GESTOPT':'FINISH · '+fmt(ms))+' s';startMessage.textContent='';playAudio(finishAudio);if(isRemoteArrival())send({type:'FINISH_RESULT',ms});$('indicator').textContent=manual?'GESTOPT':'FINISH GEDETECTEERD';$('indicator').style.background='#1b7f3a';$('indicator').style.color='#fff';$('timerIndicator').textContent=manual?'GESTOPT':'FINISH GEDETECTEERD';$('timerIndicator').style.background='#1b7f3a';$('timerIndicator').style.color='#fff';$('liveBadge').textContent='FINISH';$('liveBadge').style.background='#1b7f3a';$('liveBadge').style.color='#fff';addResult(ms);$('resultTime').textContent=fmt(ms)+' s';$('resultStatus').textContent=($('athlete').value||'Onbekend')+' · '+$('distance').value+' m';setTimeout(()=>{if(readyForResult)showWindow('results')},700)}
