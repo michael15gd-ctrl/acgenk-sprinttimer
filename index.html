@@ -67,18 +67,18 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
             <label for="startSoundChoice">Startgeluid</label>
             <select id="startSoundChoice">
               <option value="sounds/start.wav" selected>start.wav</option>
-              <option value="sounds/gunshot.mp3">gunshot.mp3</option>
+              <option value="sounds/gunshot.wav">gunshot.wav</option>
             </select>
             <label for="startSoundFile" style="margin-top:8px">Of kies zelf één startgeluid</label>
             <input id="startSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
             <div id="startSoundName" class="file-name">Ingebouwd: start.wav</div>
-            <div class="small" style="margin-top:6px">Er wordt precies één startgeluid gebruikt. Kies bijvoorbeeld start.wav of gunshot.mp3.</div>
+            <div class="small" style="margin-top:6px">Er wordt precies één startgeluid gebruikt. Kies bijvoorbeeld start.wav of gunshot.wav.</div>
           </div>
           <div>
             <label for="finishSoundChoice">Finishgeluid</label>
             <select id="finishSoundChoice">
               <option value="sounds/finish.wav" selected>finish.wav</option>
-              <option value="sounds/gunshot.mp3">gunshot.mp3</option>
+              <option value="sounds/gunshot.wav">gunshot.wav</option>
             </select>
             <label for="finishSoundFile" style="margin-top:8px">Of kies zelf een bestand</label>
             <input id="finishSoundFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/*,.mp3,.wav,.m4a,.aac">
@@ -90,7 +90,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
           <button id="testSound" type="button" class="secondary">Test startgeluid</button>
           <button id="testFinishSound" type="button" class="secondary">Test finishgeluid</button>
         </div>
-        <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg <b>gunshot.mp3</b> toe aan de map <b>sounds</b> in GitHub als je dat als startgeluid wilt kiezen.</div>
+        <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg <b>gunshot.wav</b> toe aan de map <b>sounds</b> in GitHub als je dat als startgeluid wilt kiezen.</div>
       </div>
 
       <div class="hint" style="margin-top:12px">De eigen geluiden worden alleen op dit toestel gebruikt. Ze hoeven niet naar GitHub of Vercel te worden geüpload.</div>
