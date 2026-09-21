@@ -26,9 +26,6 @@ video{width:100%;height:100%;object-fit:cover;display:block}
 table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #333;text-align:left}
 .small{font-size:12px;color:#aaa;line-height:1.4}
 </style>
-<link rel="manifest" href="manifest.webmanifest">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 <header>AC GENK · SPRINT TIMER</header>
@@ -69,33 +66,41 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 
 <section class="card small">
   <b>Prototype</b><br>
-  De automatische finishdetectie gebruikt eenvoudige camerabeeld-analyse. Dit is bedoeld voor training en moet eerst op de piste getest en gekalibreerd worden. Het vervangt geen officiële FAT-timing.
+  De automatische finishdetectie vergelijkt het camerabeeld met de achtergrond die vlak voor de start wordt vastgelegd. Dit is bedoeld voor training en moet eerst op de piste getest en gekalibreerd worden. Het vervangt geen officiële FAT-timing.
 </section>
 </main>
 
 <script>
 (() => {
 const $=id=>document.getElementById(id);
-const video=$('video'), stage=$('stage'), line=$('line'), timer=$('timer'), status=$('status');
+const video=$('video'), timer=$('timer'), status=$('status');
 const cameraBtn=$('camera'), startBtn=$('start'), stopBtn=$('stop'), resetBtn=$('reset'), calBtn=$('calibrate');
-let stream=null, running=false, startedAt=0, raf=0, lastFrame=null, crossingArmed=false;
+let stream=null, running=false, startedAt=0, raf=0;
 let linePct=.68, direction=1, lastCross=0;
+let detector=null;
 
 function setStatus(s){status.textContent=s}
 function fmt(ms){return (ms/1000).toFixed(3)}
-function renderLine(){line.style.left=(linePct*100)+'%'}
+function renderLine(){ $('line').style.left=(linePct*100)+'%' }
 renderLine();
 
 cameraBtn.onclick=async()=>{
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},
+      audio:false
+    });
     video.srcObject=stream;
     await video.play();
     cameraBtn.textContent='Camera actief';
-    cameraBtn.disabled=true; startBtn.disabled=false; calBtn.disabled=false;
-    setStatus('Camera actief · plaats de loper buiten beeld');
-    startDetectionLoop();
-  }catch(e){setStatus('Camera kon niet starten. Geef de browser cameratoegang.')}
+    cameraBtn.disabled=true;
+    startBtn.disabled=false;
+    calBtn.disabled=false;
+    setStatus('Camera actief · zet de gele lijn op de finishlijn');
+    setupDetector();
+  }catch(e){
+    setStatus('Camera kon niet starten. Geef Safari cameratoegang.');
+  }
 };
 
 calBtn.onclick=()=>{
@@ -107,17 +112,26 @@ calBtn.onclick=()=>{
 
 startBtn.onclick=()=>{
   if(running)return;
-  running=true; crossingArmed=true; lastCross=0;
-  startBtn.disabled=true; stopBtn.disabled=false;
-  let n=3; timer.textContent='3.000'; setStatus('Maak je klaar…');
+  prepareBackground();
+  running=true;
+  lastCross=0;
+  startBtn.disabled=true;
+  stopBtn.disabled=false;
+  let n=3;
+  timer.textContent='3.000';
+  setStatus('Maak je klaar…');
   const tick=()=>{
-    if(n>0){timer.textContent=n+'.000'; n--; setTimeout(tick,1000)}
-    else{
+    if(n>0){
+      timer.textContent=n+'.000';
+      n--;
+      setTimeout(tick,1000);
+    }else{
       startedAt=performance.now();
-      setStatus('LOPEN!');
+      setStatus('LOPEN! · camera detecteert de finish');
       timerLoop();
     }
-  }; setTimeout(tick,350);
+  };
+  setTimeout(tick,350);
 };
 
 function timerLoop(){
@@ -127,52 +141,107 @@ function timerLoop(){
 }
 
 stopBtn.onclick=()=>finish();
+
 resetBtn.onclick=()=>{
-  running=false; crossingArmed=false; cancelAnimationFrame(raf);
-  timer.textContent='0.000'; setStatus('Klaar om te starten');
-  startBtn.disabled=!stream; stopBtn.disabled=true;
+  running=false;
+  cancelAnimationFrame(raf);
+  timer.textContent='0.000';
+  setStatus('Klaar om te starten');
+  startBtn.disabled=!stream;
+  stopBtn.disabled=true;
 };
 
 function finish(){
   if(!running)return;
   const ms=performance.now()-startedAt;
-  running=false; crossingArmed=false; stopBtn.disabled=true; startBtn.disabled=false;
-  timer.textContent=fmt(ms); setStatus('FINISH · '+fmt(ms)+' s');
+  running=false;
+  stopBtn.disabled=true;
+  startBtn.disabled=false;
+  timer.textContent=fmt(ms);
+  setStatus('FINISH · '+fmt(ms)+' s');
   const tr=document.createElement('tr');
-  tr.innerHTML='<td>'+escapeHtml($('athlete').value||'Onbekend')+'</td><td>'+$('distance').value+' m</td><td><b>'+fmt(ms)+' s</b></td>';
+  const name=($('athlete').value||'Onbekend').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  tr.innerHTML='<td>'+name+'</td><td>'+$('distance').value+' m</td><td><b>'+fmt(ms)+' s</b></td>';
   $('results').prepend(tr);
 }
 
-function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+/* ---- Improved finish detection ----
+   Captures a clean background immediately before the countdown.
+   During the sprint, it compares the current image with that background.
+   A sufficient amount of changed pixels inside a narrow finish zone triggers finish.
+*/
+function setupDetector(){
+  detector=document.createElement('canvas');
+  detector.width=320;
+  detector.height=180;
+}
 
-function startDetectionLoop(){
-  const c=document.createElement('canvas'), ctx=c.getContext('2d',{willReadFrequently:true});
-  let prev=null, stable=0;
-  function loop(){
-    raf=requestAnimationFrame(loop);
-    if(video.readyState<2 || !crossingArmed || !running)return;
-    const w=160,h=100; c.width=w;c.height=h;ctx.drawImage(video,0,0,w,h);
-    const data=ctx.getImageData(0,0,w,h).data;
-    if(!prev){prev=new Uint8ClampedArray(data);return}
-    const x=Math.round(w*linePct), span=8;
-    let diff=0, count=0;
-    for(let y=8;y<h-8;y+=2){
-      for(let dx=-span;dx<=span;dx+=2){
-        const xx=Math.max(0,Math.min(w-1,x+dx)), i=(y*w+xx)*4;
-        const d=Math.abs(data[i]-prev[i])+Math.abs(data[i+1]-prev[i+1])+Math.abs(data[i+2]-prev[i+2]);
-        if(d>85)diff++;
-        count++;
-      }
-    }
-    const ratio=diff/count;
-    prev.set(data);
-    // Require several strong frames to reduce false triggers from noise/light.
-    if(ratio>.18) stable++; else stable=Math.max(0,stable-1);
-    if(stable>=3 && performance.now()-lastCross>1200){
-      lastCross=performance.now(); stable=0; finish();
+function captureBackground(){
+  if(!detector)return null;
+  const ctx=detector.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,0,0,detector.width,detector.height);
+  const d=ctx.getImageData(0,0,detector.width,detector.height).data;
+  const gray=new Uint8Array(detector.width*detector.height);
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    gray[p]=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;
+  }
+  return gray;
+}
+
+let background=null, framesOver=0;
+
+function prepareBackground(){
+  background=captureBackground();
+  framesOver=0;
+  if(background)setStatus('Achtergrond vastgelegd · maak je klaar…');
+}
+
+function detectFinish(){
+  if(!detector || !background || !running || video.readyState<2)return;
+  const ctx=detector.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,0,0,detector.width,detector.height);
+  const d=ctx.getImageData(0,0,detector.width,detector.height).data;
+  const w=detector.width,h=detector.height;
+  const x=Math.round(w*linePct);
+
+  // A wider band is more forgiving on a phone camera.
+  const band=10;
+  let changed=0, total=0;
+
+  for(let y=12;y<h-12;y+=2){
+    for(let dx=-band;dx<=band;dx+=2){
+      const xx=Math.max(0,Math.min(w-1,x+dx));
+      const p=y*w+xx, i=p*4;
+      const g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0;
+      const diff=Math.abs(g-background[p]);
+      // Ignore tiny camera noise; 32 works better across iPhone cameras.
+      if(diff>32) changed++;
+      total++;
     }
   }
-  loop();
+
+  const ratio=changed/total;
+
+  // Require the line zone to be occupied for several consecutive frames.
+  if(ratio>0.10) framesOver++;
+  else framesOver=Math.max(0,framesOver-1);
+
+  if(framesOver>=2 && performance.now()-lastCross>1200){
+    lastCross=performance.now();
+    framesOver=0;
+    finish();
+  }
+  raf=requestAnimationFrame(detectFinish);
+}
+
+function startDetectionLoop(){
+  if(!detector)return;
+  cancelAnimationFrame(raf);
+  const loop=()=>{
+    if(running) detectFinish();
+    else raf=requestAnimationFrame(loop);
+  };
+  raf=requestAnimationFrame(loop);
 }
 })();
 </script>
