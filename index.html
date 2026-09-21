@@ -30,6 +30,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 .sequence-box{background:#262626;border-radius:11px;padding:12px;margin-top:12px}.sequence-preview{display:flex;align-items:center;justify-content:center;gap:8px;min-height:76px;text-align:center;font-size:20px;font-weight:800}.sequence-preview span{padding:8px 10px;border-radius:10px;background:#333}.sequence-arrow{color:#aaa;font-weight:900}
 .timer-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}.live-badge{font-size:12px;font-weight:900;padding:6px 8px;border-radius:8px;background:var(--green)}
 @media(max-width:520px){#timer{font-size:56px}.result-time{font-size:48px}header{font-size:19px}.start-message{font-size:25px}}
+.sync-flash{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,212,0,.96);color:#111;z-index:50;font-size:64px;font-weight:900}.sync-flash.show{display:flex}
 </style>
 </head>
 <body>
@@ -91,6 +92,24 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
           <button id="testFinishSound" type="button" class="secondary">Test finishgeluid</button>
         </div>
         <div id="soundStatus" class="small sound-note">MP3-bestanden worden ondersteund. Voeg <b>gunshot.wav</b> toe aan de map <b>sounds</b> in GitHub als je dat als startgeluid wilt kiezen.</div>
+      </div>
+
+      <div class="sound-box">
+        <div class="row" style="align-items:end">
+          <div style="flex:2">
+            <label for="startCorrection">Klokcorrectie bij startgeluid</label>
+            <input id="startCorrection" type="range" min="-500" max="500" step="10" value="0">
+            <div class="small" style="margin-top:5px">Positief = klok iets later laten starten. Negatief = klok iets vroeger laten starten.</div>
+          </div>
+          <div style="max-width:150px">
+            <label for="startCorrectionValue">Correctie</label>
+            <input id="startCorrectionValue" type="number" min="-500" max="500" step="10" value="0">
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="testSync" type="button" class="secondary">Test synchronisatie</button>
+        </div>
+        <div id="syncStatus" class="small sound-note">Correctie: 0 ms</div>
       </div>
 
       <div class="hint" style="margin-top:12px">De eigen geluiden worden alleen op dit toestel gebruikt. Ze hoeven niet naar GitHub of Vercel te worden geüpload.</div>
@@ -166,6 +185,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 <audio id="startAudio" preload="auto" src="sounds/start.wav"></audio>
 <audio id="finishAudio" preload="auto" src="sounds/finish.wav"></audio>
 
+<div id="syncFlash" class="sync-flash">GO</div>
 <script>
 (() => {
 const $=id=>document.getElementById(id);
@@ -178,6 +198,7 @@ const startAudio=$('startAudio'),finishAudio=$('finishAudio');
 const startSoundFile=$('startSoundFile'),finishSoundFile=$('finishSoundFile');
 const startSoundChoice=$('startSoundChoice'),finishSoundChoice=$('finishSoundChoice');
 const soundStatus=$('soundStatus');
+const startCorrection=$('startCorrection'),startCorrectionValue=$('startCorrectionValue'),testSync=$('testSync'),syncStatus=$('syncStatus'),syncFlash=$('syncFlash');
 let stream=null,running=false,sequenceActive=false,startedAt=0,linePct=.68,direction=1,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
 let readyForResult=false,lastMs=0,startSequenceToken=0,detectionRaf=0,timerInterval=0,sequenceTimers=[];
 let startObjectUrl=null,finishObjectUrl=null,audioUnlocked=false;
@@ -274,6 +295,21 @@ renderLine();updatePreview();setReadyIndicators();
 $('startPart1').addEventListener('input',updatePreview);
 $('startPart2').addEventListener('input',updatePreview);
 
+function getStartCorrection(){
+  const v=Number(startCorrectionValue.value);
+  if(!Number.isFinite(v)) return 0;
+  return Math.max(-500,Math.min(500,Math.round(v/10)*10));
+}
+function syncCorrectionUi(v){
+  v=Math.max(-500,Math.min(500,Math.round(Number(v)/10)*10));
+  startCorrection.value=String(v);startCorrectionValue.value=String(v);syncStatus.textContent='Correctie: '+(v>0?'+':'')+v+' ms';
+  localStorage.setItem('acgenk_start_correction',String(v));
+}
+(function loadCorrection(){const saved=Number(localStorage.getItem('acgenk_start_correction'));syncCorrectionUi(Number.isFinite(saved)?saved:0)})();
+startCorrection.addEventListener('input',e=>syncCorrectionUi(e.target.value));
+startCorrectionValue.addEventListener('input',e=>syncCorrectionUi(e.target.value));
+
+
 toCamera.addEventListener('click',async()=>{await unlockAudio();$('summaryAthlete').textContent=$('athlete').value||'Onbekend';$('summaryDistance').textContent=$('distance').value;showWindow('camera')});
 backSetup.addEventListener('click',()=>showWindow('setup'));
 backCamera.addEventListener('click',()=>{resetTimingState();showWindow('camera')});
@@ -328,6 +364,28 @@ finishSoundFile.addEventListener('change',async e=>{
   await unlockAudio();
 });
 
+testSync.addEventListener('click',async()=>{
+  await unlockAudio();
+  if(!soundOn.checked) soundOn.checked=true;
+  syncFlash.classList.remove('show');
+  const correction=getStartCorrection();
+  const base=performance.now();
+  const flashAt=Math.max(0,correction);
+  const soundAt=Math.max(0,-correction);
+  syncStatus.textContent='Synchronisatietest · correctie '+(correction>0?'+':'')+correction+' ms';
+  if(soundAt===0){
+    playAudio(startAudio);
+  }else{
+    setTimeout(()=>playAudio(startAudio),soundAt);
+  }
+  if(flashAt===0){
+    syncFlash.classList.add('show');
+    setTimeout(()=>syncFlash.classList.remove('show'),220);
+  }else{
+    setTimeout(()=>{syncFlash.classList.add('show');setTimeout(()=>syncFlash.classList.remove('show'),220)},flashAt);
+  }
+});
+
 cameraBtn.addEventListener('click',async()=>{
   try{
     await unlockAudio();
@@ -367,9 +425,10 @@ startBtn.addEventListener('click',async()=>{
       if(!sequenceActive||token!==startSequenceToken)return;
       sequenceActive=false;
       // Het gekozen startgeluid is het enige startsignaal.
-      // De timer start direct wanneer het afspelen van dit geluid wordt gestart.
-      const startMoment=performance.now();
-      startedAt=startMoment;
+      // De timer wordt gekoppeld aan hetzelfde startmoment, met de ingestelde correctie.
+      const audioStartMoment=performance.now();
+      const correction=getStartCorrection();
+      startedAt=audioStartMoment+correction;
       running=true;
       startMessage.textContent='LOPEN!';
       playAudio(startAudio);
