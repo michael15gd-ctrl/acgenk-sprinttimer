@@ -16,7 +16,8 @@ h2{margin:0 0 8px;font-size:23px}h3{margin:0 0 8px}.intro{color:#ccc;line-height
 input,select,button{width:100%;min-height:50px;border-radius:11px;border:0;padding:10px 12px;font-size:16px}input,select{background:#fff;color:#111}button{font-weight:800;background:var(--yellow);color:#111;cursor:pointer}button.secondary{background:#333;color:#fff}button.danger{background:#7d2525;color:#fff}button:disabled{opacity:.45;cursor:default}
 .nav{display:flex;gap:10px;margin-top:12px}.nav>*{flex:1}.small{font-size:12px;color:#aaa;line-height:1.45}.hint{background:#262626;border-radius:11px;padding:11px;color:#ccc;font-size:13px;line-height:1.45}
 #stage{position:relative;background:#000;border-radius:16px;overflow:hidden;aspect-ratio:16/10}video{width:100%;height:100%;object-fit:cover;display:block}
-#line{position:absolute;top:0;bottom:0;left:68%;width:4px;background:var(--yellow);box-shadow:0 0 0 2px #111}
+#line{position:absolute;top:0;bottom:0;left:68%;width:2px;background:var(--yellow);box-shadow:0 0 0 1px rgba(17,17,17,.45)}
+#timerStage{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:16/10;margin-top:12px}#timerStage video{width:100%;height:100%;object-fit:cover;display:block}#timerLine{position:absolute;top:0;bottom:0;left:68%;width:2px;background:var(--yellow);box-shadow:0 0 0 1px rgba(17,17,17,.45)}#timerIndicator{position:absolute;top:10px;left:10px;z-index:5;padding:6px 9px;border-radius:8px;background:#333;color:#fff;font:700 12px Arial,sans-serif}
 #indicator{position:absolute;top:10px;left:10px;z-index:5;padding:6px 9px;border-radius:8px;background:#333;color:#fff;font:700 12px Arial,sans-serif}
 .position-readout{text-align:center;font-size:13px;color:#bbb;margin-top:8px}.position-readout b{color:#fff}
 #timer{font-size:72px;text-align:center;font-variant-numeric:tabular-nums;font-weight:900;margin:14px 0 4px;line-height:1}
@@ -41,12 +42,20 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
         <div><label for="athlete">Atleet</label><input id="athlete" placeholder="Naam"></div>
         <div><label for="distance">Afstand</label><select id="distance"><option>20</option><option selected>30</option><option>40</option><option>50</option><option>60</option><option>80</option><option>100</option></select></div>
       </div>
-      <div style="margin-top:12px"><label for="startText">Starttekst</label><input id="startText" value="Op uw plaatsen – klaar"></div>
-      <div class="row" style="margin-top:12px">
-        <label class="check"><input id="soundOn" type="checkbox" checked> Piepsignalen aan</label>
-        <div></div>
+      <div style="margin-top:12px"><label>Startprocedure</label></div>
+      <div class="row">
+        <div><label for="startPart1">Startdeel 1</label><input id="startPart1" value="Op uw plaatsen"></div>
+        <div><label for="startPart2">Startdeel 2</label><input id="startPart2" value="Klaar"></div>
       </div>
-      <div class="hint" style="margin-top:12px">Bij <b>START</b> verschijnt de starttekst. Daarna volgt de startpiep en begint de tijd te lopen.</div>
+      <div class="row" style="margin-top:12px">
+        <div><label for="startGap">Tijd tussen de startdelen</label><select id="startGap"><option value="1500">1,5 seconde</option><option value="2000" selected>2 seconden</option><option value="2500">2,5 seconden</option><option value="3000">3 seconden</option></select></div>
+        <div><label for="beepDelay">Tijd van ‘Klaar’ tot startpiep</label><select id="beepDelay"><option value="500">0,5 seconde</option><option value="800" selected>0,8 seconde</option><option value="1200">1,2 seconden</option><option value="1500">1,5 seconde</option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px;align-items:center">
+        <label class="check"><input id="soundOn" type="checkbox" checked> Piepsignalen aan</label>
+        <button id="testSound" type="button" class="secondary">Test geluid</button>
+      </div>
+      <div class="hint" style="margin-top:12px">Bij <b>START</b> verschijnt eerst het eerste startdeel. Na de ingestelde tijd verschijnt het tweede deel. Daarna volgt de startpiep en begint de tijd te lopen.</div>
       <div class="nav"><button id="toCamera">Volgende: camera plaatsen</button></div>
     </div>
   </section>
@@ -79,6 +88,14 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
       <div class="step">Stap 3 van 4</div>
       <h2>Timing</h2>
       <div class="hint"><b id="summaryAthlete">Atleet</b> · <span id="summaryDistance">30</span> m</div>
+      <div style="margin-top:12px">
+        <div id="timerStage">
+          <video id="videoTimer" autoplay muted playsinline></video>
+          <div id="timerLine"></div>
+          <div id="timerIndicator">LIVE CAMERA</div>
+        </div>
+        <div class="position-readout">Finishlijn: <b id="timerLinePosition">68%</b></div>
+      </div>
       <div id="timer">0.000</div>
       <div id="status" class="status">Klaar om te starten</div>
       <div id="startMessage" class="start-message"></div>
@@ -114,22 +131,48 @@ table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px so
 (() => {
 const $=id=>document.getElementById(id);
 const windows={setup:$('windowSetup'),camera:$('windowCamera'),timer:$('windowTimer'),results:$('windowResults')};
-const video=$('video'),timer=$('timer'),status=$('status'),startMessage=$('startMessage');
+const video=$('video'),videoTimer=$('videoTimer'),timer=$('timer'),status=$('status'),startMessage=$('startMessage');
 const cameraBtn=$('camera'),startBtn=$('start'),stopBtn=$('stop'),resetBtn=$('reset'),calBtn=$('calibrate');
 const toCamera=$('toCamera'),toTimer=$('toTimer'),toResults=$('toResults'),backSetup=$('backSetup'),backCamera=$('backCamera');
-const soundOn=$('soundOn');
+const soundOn=$('soundOn'),testSound=$('testSound');
 let stream=null,running=false,startedAt=0,linePct=.68,direction=1,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
 let audioCtx=null,raf=0,readyForResult=false,lastMs=0,startSequenceToken=0;
 
 function showWindow(name){Object.values(windows).forEach(w=>w.classList.remove('active'));windows[name].classList.add('active');window.scrollTo(0,0)}
 function fmt(ms){return (ms/1000).toFixed(3)}
-function renderLine(){ $('line').style.left=(linePct*100)+'%'; $('linePosition').textContent=Math.round(linePct*100)+'%' }
+function renderLine(){ const pct=(linePct*100); $('line').style.left=pct+'%'; $('linePosition').textContent=Math.round(pct)+'%'; $('timerLine').style.left=pct+'%'; $('timerLinePosition').textContent=Math.round(pct)+'%' }
 function setCameraStatus(s){$('cameraStatus').textContent=s}
 function setStatus(s){status.textContent=s}
-function ensureAudio(){try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}catch(e){}}
-function beep(freq=880,duration=.12){if(!soundOn.checked)return;ensureAudio();if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(.0001,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.22,audioCtx.currentTime+.01);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+duration+.02)}
-function beepStart(){beep(880,.12);setTimeout(()=>beep(1100,.16),150)}
-function beepFinish(){beep(660,.12);setTimeout(()=>beep(990,.18),150)}
+async function ensureAudio(){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+    return audioCtx.state==='running';
+  }catch(e){ console.warn('Audio niet beschikbaar',e); return false; }
+}
+async function beep(freq=880,duration=.14){
+  if(!soundOn.checked) return false;
+  const ctx=await ensureAudio();
+  if(!ctx) return false;
+  const now=ctx.currentTime;
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='sine'; o.frequency.value=freq;
+  g.gain.setValueAtTime(.0001,now);
+  g.gain.exponentialRampToValueAtTime(.45,now+.015);
+  g.gain.exponentialRampToValueAtTime(.0001,now+duration);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(now); o.stop(now+duration+.03);
+  return true;
+}
+async function beepStart(){ await beep(880,.14); setTimeout(()=>beep(1100,.20),170) }
+async function beepFinish(){ await beep(660,.14); setTimeout(()=>beep(990,.22),170) }
+testSound.addEventListener('click',async()=>{
+  soundOn.checked=true;
+  const ok=await beep(880,.16);
+  if(ok){ setTimeout(()=>beep(1100,.20),220); setCameraStatus('Geluidstest uitgevoerd'); }
+  else setCameraStatus('Geen geluid beschikbaar in deze browser');
+});
+soundOn.addEventListener('change',()=>{ if(soundOn.checked){ ensureAudio(); }});
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
 renderLine();
@@ -145,10 +188,10 @@ cameraBtn.addEventListener('click',async()=>{
  try{
   ensureAudio();
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-  video.srcObject=stream;await video.play();
+  video.srcObject=stream;videoTimer.srcObject=stream;await video.play();await videoTimer.play();
   canvas=document.createElement('canvas');canvas.width=320;canvas.height=180;
   cameraBtn.textContent='Camera actief';cameraBtn.disabled=true;calBtn.disabled=false;toTimer.disabled=false;
-  $('indicator').textContent='DETECTIE GEREED';$('indicator').style.background='#1b7f3a';
+  $('indicator').textContent='DETECTIE GEREED';$('indicator').style.background='#1b7f3a';$('timerIndicator').textContent='LIVE CAMERA';$('timerIndicator').style.background='#1b7f3a';
   setCameraStatus('Camera actief · zet de gele lijn op de finishlijn');
   detectionLoop();
  }catch(e){console.error(e);setCameraStatus('Camera kon niet starten. Geef Safari/Chrome cameratoegang.')}
@@ -156,27 +199,37 @@ cameraBtn.addEventListener('click',async()=>{
 
 calBtn.addEventListener('click',()=>{linePct+=.03*direction;if(linePct>.9){linePct=.9;direction=-1}if(linePct<.1){linePct=.1;direction=1}renderLine()});
 
-startBtn.addEventListener('click',()=>{
+startBtn.addEventListener('click',async()=>{
  if(running||!canvas)return;
- ensureAudio();
+ await ensureAudio();
  startSequenceToken++;const token=startSequenceToken;
  background=captureGray();previous=background?new Uint8Array(background):null;framesOver=0;lastCross=0;readyForResult=false;toResults.disabled=true;
  running=true;startBtn.disabled=true;stopBtn.disabled=false;resetBtn.disabled=false;
- const text=$('startText').value.trim()||'Klaar';
- timer.textContent='0.000';startMessage.textContent=text;setStatus('Startsignaal…');
+ const part1=$('startPart1').value.trim()||'Op uw plaatsen';
+ const part2=$('startPart2').value.trim()||'Klaar';
+ const gap=Number($('startGap').value)||2000;
+ const beepDelay=Number($('beepDelay').value)||800;
+ timer.textContent='0.000';startMessage.textContent=part1;setStatus('Startsignaal…');
  setTimeout(()=>{
    if(!running||token!==startSequenceToken)return;
-   beepStart();startedAt=performance.now();
-   $('indicator').textContent='DETECTIE ACTIEF';$('indicator').style.background='#ffd400';$('indicator').style.color='#111';
-   setStatus('LOPEN! · finish wordt automatisch gedetecteerd');timerLoop();
- },2000);
+   startMessage.textContent=part2;
+   setTimeout(async()=>{
+     if(!running||token!==startSequenceToken)return;
+     await beepStart();
+     if(!running||token!==startSequenceToken)return;
+     startedAt=performance.now();
+     $('indicator').textContent='DETECTIE ACTIEF';$('indicator').style.background='#ffd400';$('indicator').style.color='#111';
+     $('timerIndicator').textContent='DETECTIE ACTIEF';$('timerIndicator').style.background='#ffd400';$('timerIndicator').style.color='#111';
+     setStatus('LOPEN! · finish wordt automatisch gedetecteerd');timerLoop();
+   },beepDelay);
+ },gap);
 });
 
 stopBtn.addEventListener('click',finish);
 resetBtn.addEventListener('click',()=>{
  startSequenceToken++;running=false;background=null;previous=null;framesOver=0;lastMs=0;readyForResult=false;toResults.disabled=true;
  timer.textContent='0.000';startMessage.textContent='';setStatus('Klaar om te starten');stopBtn.disabled=true;startBtn.disabled=!stream;
- if(stream){$('indicator').textContent='DETECTIE GEREED';$('indicator').style.background='#1b7f3a';$('indicator').style.color='#fff'}
+ if(stream){$('indicator').textContent='DETECTIE GEREED';$('indicator').style.background='#1b7f3a';$('timerIndicator').textContent='LIVE CAMERA';$('timerIndicator').style.background='#1b7f3a';$('indicator').style.color='#fff'}
 });
 
 function timerLoop(){if(!running)return;timer.textContent=fmt(performance.now()-startedAt);raf=requestAnimationFrame(timerLoop)}
@@ -184,7 +237,7 @@ function finish(){
  if(!running)return;
  const ms=performance.now()-startedAt;running=false;cancelAnimationFrame(raf);framesOver=0;lastMs=ms;readyForResult=true;toResults.disabled=false;stopBtn.disabled=true;startBtn.disabled=false;
  timer.textContent=fmt(ms);setStatus('FINISH · '+fmt(ms)+' s');startMessage.textContent='';beepFinish();
- $('indicator').textContent='FINISH GEDETECTEERD';$('indicator').style.background='#1b7f3a';$('indicator').style.color='#fff';
+ $('indicator').textContent='FINISH GEDETECTEERD';$('indicator').style.background='#1b7f3a';$('indicator').style.color='#fff';$('timerIndicator').textContent='FINISH GEDETECTEERD';$('timerIndicator').style.background='#1b7f3a';$('timerIndicator').style.color='#fff';
  addResult(ms);
  $('resultTime').textContent=fmt(ms)+' s';$('resultStatus').textContent=($('athlete').value||'Onbekend')+' · '+$('distance').value+' m';
  setTimeout(()=>{if(readyForResult)showWindow('results')},700);
