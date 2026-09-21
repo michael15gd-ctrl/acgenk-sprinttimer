@@ -32,6 +32,30 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 <main>
 <section class="card">
   <div class="row">
+    <button id="modeSprint">Sprint timer</button>
+    <button id="modePhoto" class="secondary">Finishfoto</button>
+  </div>
+</section>
+
+<section class="card" id="startSettings">
+  <h3 style="margin-top:0">Startprocedure</h3>
+  <div class="row">
+    <div><label>Stap 1</label><input id="start1" value="Op uw plaatsen"></div>
+    <div><label>Stap 2</label><input id="start2" value="Klaar"></div>
+    <div><label>Stap 3 (optioneel)</label><input id="start3" value=""></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div><label>Tijd tussen stappen (seconden)</label><input id="stepDelay" type="number" min="0.3" max="5" step="0.1" value="1.0"></div>
+    <div style="display:flex;align-items:end">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;min-height:48px;color:#fff">
+        <input id="beepOn" type="checkbox" checked style="width:20px;min-height:20px"> Piep aan
+      </label>
+    </div>
+  </div>
+</section>
+
+<section class="card" id="sprintControls">
+  <div class="row">
     <div><label>Atleet</label><input id="athlete" placeholder="Naam"></div>
     <div><label>Afstand</label><select id="distance"><option>20</option><option selected>30</option><option>40</option><option>50</option><option>60</option><option>100</option></select></div>
   </div>
@@ -49,7 +73,17 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
   </div>
 </section>
 
-<section class="card">
+<section class="card" id="photoPanel" style="display:none">
+  <h3 style="margin-top:0">Finishfoto</h3>
+  <p class="small">Richt de camera op de finishlijn en maak een foto. De foto blijft in deze sessie beschikbaar zodat je hem opnieuw kunt bekijken.</p>
+  <div class="row">
+    <button id="takePhoto" disabled>Maak finishfoto</button>
+    <button id="viewPhoto" class="secondary" disabled>Bekijk foto</button>
+  </div>
+  <img id="photoPreview" alt="Laatste finishfoto" style="display:none;width:100%;margin-top:12px;border-radius:12px">
+</section>
+
+<section class="card" id="timerPanel">
   <div id="timer">0.000</div>
   <div id="status" class="status">Klaar om te starten</div>
   <div class="row" style="margin-top:10px">
@@ -75,7 +109,10 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 const $=id=>document.getElementById(id);
 const video=$('video'),timer=$('timer'),status=$('status');
 const cameraBtn=$('camera'),startBtn=$('start'),stopBtn=$('stop'),resetBtn=$('reset'),calBtn=$('calibrate');
+const modeSprint=$('modeSprint'),modePhoto=$('modePhoto'),sprintControls=$('sprintControls'),photoPanel=$('photoPanel');
+const timerPanel=$('timerPanel'),startSettings=$('startSettings'),takePhoto=$('takePhoto'),viewPhoto=$('viewPhoto'),photoPreview=$('photoPreview');
 let stream=null,running=false,startedAt=0,linePct=.68,direction=1,raf=0,background=null,previous=null,canvas=null,framesOver=0,lastCross=0;
+let audioCtx=null,lastPhoto=null;
 
 const indicator=document.createElement('div');
 indicator.style.cssText='position:absolute;top:10px;left:10px;z-index:5;padding:6px 9px;border-radius:8px;background:#333;color:#fff;font:700 12px Arial,sans-serif';
@@ -83,16 +120,31 @@ indicator.textContent='DETECTIE UIT';
 $('stage').appendChild(indicator);
 
 function setStatus(s){status.textContent=s}
-function fmt(ms){return (ms/1000).toFixed(3)}
+function fmt(ms){return(ms/1000).toFixed(3)}
 function renderLine(){$('line').style.left=(linePct*100)+'%'}
 renderLine();
+
+function beep(freq=880,duration=.12){
+ if(!$('beepOn').checked)return;
+ try{
+  audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended')audioCtx.resume();
+  const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();
+  osc.type='sine';osc.frequency.value=freq;
+  gain.gain.setValueAtTime(.0001,audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.18,audioCtx.currentTime+.01);
+  gain.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);
+  osc.connect(gain);gain.connect(audioCtx.destination);
+  osc.start();osc.stop(audioCtx.currentTime+duration+.02);
+ }catch(e){}
+}
 
 cameraBtn.addEventListener('click',async()=>{
  try{
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-  video.srcObject=stream; await video.play();
+  video.srcObject=stream;await video.play();
   canvas=document.createElement('canvas');canvas.width=320;canvas.height=180;
-  cameraBtn.textContent='Camera actief';cameraBtn.disabled=true;startBtn.disabled=false;calBtn.disabled=false;
+  cameraBtn.textContent='Camera actief';cameraBtn.disabled=true;startBtn.disabled=false;calBtn.disabled=false;takePhoto.disabled=false;
   indicator.textContent='DETECTIE GEREED';indicator.style.background='#1b7f3a';
   setStatus('Camera actief · zet de gele lijn op de finishlijn');
   detectionLoop();
@@ -106,16 +158,41 @@ calBtn.addEventListener('click',()=>{
  renderLine();
 });
 
+modeSprint.addEventListener('click',()=>{
+ modeSprint.classList.remove('secondary');modePhoto.classList.add('secondary');
+ sprintControls.style.display='block';startSettings.style.display='block';timerPanel.style.display='block';photoPanel.style.display='none';
+ setStatus(stream?'Camera actief · sprinttimer klaar':'Camera nog niet gestart');
+});
+modePhoto.addEventListener('click',()=>{
+ modePhoto.classList.remove('secondary');modeSprint.classList.add('secondary');
+ sprintControls.style.display='block';startSettings.style.display='none';timerPanel.style.display='none';photoPanel.style.display='block';
+ setStatus(stream?'Camera actief · maak een foto van de finishlijn':'Start de camera om een finishfoto te maken');
+});
+
+function getSteps(){
+ return [$('start1').value.trim(),$('start2').value.trim(),$('start3').value.trim()].filter(Boolean);
+}
+
 startBtn.addEventListener('click',()=>{
  if(running||!canvas)return;
  background=captureGray();previous=background?new Uint8Array(background):null;framesOver=0;lastCross=0;
  running=true;startBtn.disabled=true;stopBtn.disabled=false;
- let n=3;timer.textContent='3.000';setStatus('Maak je klaar…');
- const tick=()=>{
-  if(n>0){timer.textContent=n+'.000';n--;setTimeout(tick,1000)}
-  else{startedAt=performance.now();indicator.textContent='DETECTIE ACTIEF';indicator.style.background='#ffd400';indicator.style.color='#111';setStatus('LOPEN! · finish wordt automatisch gedetecteerd');timerLoop()}
+ const steps=getSteps();const delay=Math.max(.3,Math.min(5,parseFloat($('stepDelay').value)||1))*1000;
+ if(!steps.length)steps.push('');
+ let i=0;
+ timer.textContent='0.000';setStatus('Maak je klaar…');
+ const next=()=>{
+  if(i<steps.length){
+   setStatus(steps[i]||'Maak je klaar…');beep(620,.10);i++;
+   setTimeout(next,delay);
+  }else{
+   startedAt=performance.now();
+   beep(1046,.18);
+   indicator.textContent='DETECTIE ACTIEF';indicator.style.background='#ffd400';indicator.style.color='#111';
+   setStatus('LOPEN! · finish wordt automatisch gedetecteerd');timerLoop();
+  }
  };
- setTimeout(tick,350);
+ setTimeout(next,300);
 });
 
 stopBtn.addEventListener('click',finish);
@@ -131,7 +208,7 @@ function timerLoop(){if(!running)return;timer.textContent=fmt(performance.now()-
 function finish(){
  if(!running)return;
  const ms=performance.now()-startedAt;running=false;framesOver=0;stopBtn.disabled=true;startBtn.disabled=false;
- timer.textContent=fmt(ms);setStatus('FINISH · '+fmt(ms)+' s');
+ timer.textContent=fmt(ms);setStatus('FINISH · '+fmt(ms)+' s');beep(440,.22);
  indicator.textContent='FINISH GEDETECTEERD';indicator.style.background='#1b7f3a';indicator.style.color='#fff';
  const tr=document.createElement('tr');
  const name=($('athlete').value||'Onbekend').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -141,10 +218,8 @@ function finish(){
 
 function captureGray(){
  if(!canvas||video.readyState<2)return null;
- const ctx=canvas.getContext('2d',{willReadFrequently:true});
- ctx.drawImage(video,0,0,canvas.width,canvas.height);
- const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;
- const gray=new Uint8Array(canvas.width*canvas.height);
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);
+ const d=ctx.getImageData(0,0,canvas.width,canvas.height).data,gray=new Uint8Array(canvas.width*canvas.height);
  for(let i=0,p=0;i<d.length;i+=4,p++)gray[p]=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0;
  return gray;
 }
@@ -155,13 +230,11 @@ function detectionLoop(){
  if(current&&previous){
   const w=canvas.width,h=canvas.height,x=Math.round(w*linePct),band=12;
   let bgChanged=0,motionChanged=0,total=0;
-  for(let y=8;y<h-8;y+=2){
-   for(let dx=-band;dx<=band;dx+=2){
-    const xx=Math.max(0,Math.min(w-1,x+dx)),p=y*w+xx;
-    if(background&&Math.abs(current[p]-background[p])>24)bgChanged++;
-    if(Math.abs(current[p]-previous[p])>22)motionChanged++;
-    total++;
-   }
+  for(let y=8;y<h-8;y+=2)for(let dx=-band;dx<=band;dx+=2){
+   const xx=Math.max(0,Math.min(w-1,x+dx)),p=y*w+xx;
+   if(background&&Math.abs(current[p]-background[p])>24)bgChanged++;
+   if(Math.abs(current[p]-previous[p])>22)motionChanged++;
+   total++;
   }
   const ratio=Math.max(bgChanged/total,motionChanged/total);
   if(running){
@@ -173,6 +246,23 @@ function detectionLoop(){
  }else if(current)previous=current;
  raf=requestAnimationFrame(detectionLoop);
 }
+
+takePhoto.addEventListener('click',()=>{
+ if(!stream||video.readyState<2)return;
+ const c=document.createElement('canvas');c.width=video.videoWidth||1280;c.height=video.videoHeight||720;
+ const ctx=c.getContext('2d');ctx.drawImage(video,0,0,c.width,c.height);
+ const x=Math.round(c.width*linePct);
+ ctx.fillStyle='#ffd400';ctx.fillRect(x-3,0,6,c.height);
+ lastPhoto=c.toDataURL('image/jpeg',.9);
+ photoPreview.src=lastPhoto;photoPreview.style.display='block';viewPhoto.disabled=false;
+ setStatus('Finishfoto gemaakt');
+});
+
+viewPhoto.addEventListener('click',()=>{
+ if(!lastPhoto)return;
+ photoPreview.style.display=photoPreview.style.display==='none'?'block':'none';
+ setStatus(photoPreview.style.display==='block'?'Finishfoto zichtbaar':'Finishfoto verborgen');
+});
 })();
 </script>
 </body>
